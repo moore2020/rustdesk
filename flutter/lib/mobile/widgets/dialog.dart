@@ -89,6 +89,35 @@ void showServerSettingsWithValue(
     apiServerMsg,
   ];
 
+  final profiles = getServerEndpointProfiles(current: serverConfig);
+  if (profiles.isEmpty) {
+    profiles.add(serverConfig.copy());
+  }
+  var selectedProfile = profiles.indexWhere(
+      (profile) => profile.sameConfig(serverConfig));
+  if (selectedProfile < 0) selectedProfile = 0;
+
+  void updateSelectedProfile() {
+    if (selectedProfile < 0 || selectedProfile >= profiles.length) return;
+    profiles[selectedProfile] = ServerConfig(
+      idServer: idCtrl.text.trim(),
+      relayServer: relayCtrl.text.trim(),
+      apiServer: apiCtrl.text.trim(),
+      key: keyCtrl.text.trim(),
+    );
+  }
+
+  void loadSelectedProfile() {
+    final profile = profiles[selectedProfile];
+    idCtrl.text = profile.idServer;
+    relayCtrl.text = profile.relayServer;
+    apiCtrl.text = profile.apiServer;
+    keyCtrl.text = profile.key;
+    idServerMsg.value = '';
+    relayServerMsg.value = '';
+    apiServerMsg.value = '';
+  }
+
   dialogManager.show((setState, close, context) {
     Future<bool> submit() async {
       setState(() {
@@ -156,6 +185,63 @@ void showServerSettingsWithValue(
           child: Obx(() => Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButton<int>(
+                          value: selectedProfile,
+                          isExpanded: true,
+                          items: profiles.asMap().entries
+                              .map((entry) => DropdownMenuItem<int>(
+                                    value: entry.key,
+                                    child: Text(entry.value.displayName,
+                                        overflow: TextOverflow.ellipsis),
+                                  ))
+                              .toList(),
+                          onChanged: isInProgress
+                              ? null
+                              : (index) {
+                                  if (index == null || index == selectedProfile) {
+                                    return;
+                                  }
+                                  updateSelectedProfile();
+                                  setState(() {
+                                    selectedProfile = index;
+                                    loadSelectedProfile();
+                                  });
+                                },
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: translate('Add'),
+                        onPressed: isInProgress
+                            ? null
+                            : () {
+                                updateSelectedProfile();
+                                profiles.add(ServerConfig());
+                                setState(() {
+                                  selectedProfile = profiles.length - 1;
+                                  loadSelectedProfile();
+                                });
+                              },
+                        icon: const Icon(Icons.add),
+                      ),
+                      IconButton(
+                        tooltip: translate('Remove'),
+                        onPressed: isInProgress || profiles.length <= 1
+                            ? null
+                            : () {
+                                profiles.removeAt(selectedProfile);
+                                if (selectedProfile >= profiles.length) {
+                                  selectedProfile = profiles.length - 1;
+                                }
+                                setState(loadSelectedProfile);
+                              },
+                        icon: const Icon(Icons.remove),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
                   buildField(translate('ID Server'), idCtrl, idServerMsg.value,
                       autofocus: true),
                   SizedBox(height: 8),
@@ -208,6 +294,8 @@ void showServerSettingsWithValue(
           'OK',
           onPressed: () async {
             if (await submit()) {
+              updateSelectedProfile();
+              await saveServerEndpointProfiles(profiles);
               close();
               showToast(translate('Successful'));
               upSetState?.call(() {});

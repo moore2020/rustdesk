@@ -3011,6 +3011,74 @@ class ServerConfig {
         relayServer = options['relay-server'] ?? "",
         apiServer = options['api-server'] ?? "",
         key = options['key'] ?? "";
+
+  ServerConfig.fromJson(Map<String, dynamic> json)
+      : idServer = (json['id'] ?? json['host'] ?? '').toString().trim(),
+        relayServer = (json['relay'] ?? '').toString().trim(),
+        apiServer = (json['api'] ?? '').toString().trim(),
+        key = (json['key'] ?? '').toString().trim();
+
+  ServerConfig copy() => ServerConfig(
+        idServer: idServer,
+        relayServer: relayServer,
+        apiServer: apiServer,
+        key: key,
+      );
+
+  Map<String, String> toJson() => {
+        'id': idServer,
+        'relay': relayServer,
+        'api': apiServer,
+        'key': key,
+      };
+
+  String get displayName {
+    final id = idServer.isEmpty ? translate('Default') : idServer;
+    return relayServer.isEmpty ? id : '$id / $relayServer';
+  }
+
+  bool sameEndpoint(ServerConfig other) =>
+      idServer == other.idServer && relayServer == other.relayServer;
+
+  bool sameConfig(ServerConfig other) =>
+      sameEndpoint(other) && apiServer == other.apiServer && key == other.key;
+}
+
+// Endpoint profiles stay in local Flutter options so they are available in the
+// app without changing the active server configuration until the user applies one.
+List<ServerConfig> getServerEndpointProfiles({ServerConfig? current}) {
+  final profiles = <ServerConfig>[];
+  try {
+    final value = bind.getLocalFlutterOption(
+        k: kOptionServerEndpointProfiles);
+    if (value.isNotEmpty) {
+      final decoded = jsonDecode(value);
+      if (decoded is List) {
+        for (final item in decoded) {
+          if (item is Map) {
+            profiles.add(ServerConfig.fromJson(Map<String, dynamic>.from(item)));
+          }
+        }
+      }
+    }
+  } catch (e) {
+    debugPrint('Failed to load server endpoint profiles: $e');
+  }
+  if (current != null &&
+      !profiles.any((profile) => profile.sameConfig(current))) {
+    profiles.insert(0, current.copy());
+  }
+  return profiles;
+}
+
+Future<void> saveServerEndpointProfiles(List<ServerConfig> profiles) async {
+  try {
+    await bind.mainSetLocalOption(
+        key: kOptionServerEndpointProfiles,
+        value: jsonEncode(profiles.map((profile) => profile.toJson()).toList()));
+  } catch (e) {
+    debugPrint('Failed to save server endpoint profiles: $e');
+  }
 }
 
 Widget dialogButton(String text,

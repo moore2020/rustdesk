@@ -99,6 +99,7 @@ const String kOptionIdWhitelist = "id-whitelist";
 const String kOptionEnableAbr = "enable-abr";
 const String kOptionEnableRecordSession = "enable-record-session";
 const String kOptionDirectServer = "direct-server";
+const String kOptionServerEndpointProfiles = "server-endpoint-profiles";
 const String kOptionDirectAccessPort = "direct-access-port";
 const String kOptionAllowAutoDisconnect = "allow-auto-disconnect";
 const String kOptionAutoDisconnectTimeout = "auto-disconnect-timeout";
