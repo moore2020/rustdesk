@@ -76,6 +76,7 @@ mod tests {
                 false,
                 None,
                 method.to_owned(),
+                None,
             );
             let monitor_session_id = uuid::Uuid::new_v4();
             let monitor_result = crate::flutter_ffi::session_add_existed_sync(
