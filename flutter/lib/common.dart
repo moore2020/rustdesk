@@ -40,6 +40,7 @@ import 'desktop/pages/view_camera_page.dart' as desktop_view_camera;
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
 import 'models/model.dart';
 import 'models/platform_model.dart';
+import 'models/server_config.dart';
 
 import 'package:flutter_hbb/native/win32.dart'
     if (dart.library.html) 'package:flutter_hbb/web/win32.dart';
@@ -3011,6 +3012,119 @@ class ServerConfig {
         relayServer = options['relay-server'] ?? "",
         apiServer = options['api-server'] ?? "",
         key = options['key'] ?? "";
+
+  ServerConfig.fromProfile(ServerProfile profile)
+      : idServer = profile.idServer,
+        relayServer = profile.relayServer,
+        apiServer = profile.apiServer,
+        key = profile.key;
+}
+
+const kServerProfileStoreOption = 'server-profiles-v1';
+const kServerProfilePeerOption = 'server-profile-id';
+
+ServerProfile serverProfileFromServerConfig(
+  ServerConfig config, {
+  String? id,
+  String name = 'Default',
+}) {
+  if (id == null) {
+    return ServerProfile.create(
+      name: name,
+      idServer: config.idServer,
+      relayServer: config.relayServer,
+      apiServer: config.apiServer,
+      key: config.key,
+    );
+  }
+  return ServerProfile(
+    id: id,
+    name: name,
+    idServer: config.idServer,
+    relayServer: config.relayServer,
+    apiServer: config.apiServer,
+    key: config.key,
+  );
+}
+
+ServerConfig serverConfigFromServerProfile(ServerProfile profile) =>
+    ServerConfig.fromProfile(profile);
+
+Future<void> saveServerProfileStore(ServerProfileStore store) async {
+  if (!isDesktop) {
+    throw UnsupportedError('Server profiles are only available on desktop');
+  }
+  await bind.mainSetOption(
+    key: kServerProfileStoreOption,
+    value: store.encode(),
+  );
+}
+
+Future<ServerProfileStore>? _loadingServerProfileStore;
+
+Future<ServerProfileStore> loadServerProfileStore() {
+  if (!isDesktop) {
+    throw UnsupportedError('Server profiles are only available on desktop');
+  }
+  // Share the first migration while its persistence call is still pending.
+  return _loadingServerProfileStore ??=
+      _loadServerProfileStore().whenComplete(() {
+    _loadingServerProfileStore = null;
+  });
+}
+
+Future<ServerProfileStore> _loadServerProfileStore() async {
+  final encoded = bind.mainGetOptionSync(key: kServerProfileStoreOption);
+  if (encoded.isNotEmpty) {
+    final store = ServerProfileStore.decode(encoded);
+    if (store.encode() != encoded) {
+      await saveServerProfileStore(store);
+    }
+    return store;
+  }
+
+  final options = jsonDecode(await bind.mainGetOptions());
+  if (options is! Map<String, dynamic>) {
+    throw const FormatException('Invalid legacy server options');
+  }
+  final store = ServerProfileStore.fromLegacy(options);
+  await saveServerProfileStore(store);
+  return store;
+}
+
+String? readPeerServerProfileId(String peerId) {
+  final value = bind.mainGetPeerOptionSync(
+    id: peerId,
+    key: kServerProfilePeerOption,
+  );
+  return value.isEmpty ? null : value;
+}
+
+Future<bool> savePeerServerProfileId(String peerId, String profileId) async {
+  final store = await loadServerProfileStore();
+  if (!store.profiles.any((profile) => profile.id == profileId)) {
+    return false;
+  }
+  await bind.mainSetPeerOption(
+    id: peerId,
+    key: kServerProfilePeerOption,
+    value: profileId,
+  );
+  return true;
+}
+
+Future<void> clearPeerServerProfileId(String peerId) async {
+  await bind.mainSetPeerOption(
+    id: peerId,
+    key: kServerProfilePeerOption,
+    value: '',
+  );
+}
+
+Future<void> clearPeerServerProfileIds(Iterable<String> peerIds) async {
+  for (final peerId in peerIds) {
+    await clearPeerServerProfileId(peerId);
+  }
 }
 
 Widget dialogButton(String text,
