@@ -191,7 +191,7 @@ async fn connect_and_login(
     let mut challenge = None;
     let mut pending_login = None;
 
-    let _keep_it = hc_connection(feedback, rendezvous_server, token).await;
+    let _keep_it = hc_connection(feedback, rendezvous_server, token, key).await;
 
     loop {
         tokio::select! {
@@ -446,7 +446,7 @@ async fn connect_and_login_mux(
     let mut challenge = None;
     let mut pending_login = None;
 
-    let _keep_it = hc_connection(feedback, rendezvous_server, token).await;
+    let _keep_it = hc_connection(feedback, rendezvous_server, token, key).await;
 
     loop {
         tokio::select! {

@@ -284,7 +284,7 @@ impl<T: InvokeUiSession> Remote<T> {
                     crate::rustdesk_interval(time::interval(Duration::new(1, 0)));
                 let mut fps_instant = Instant::now();
 
-                let _keep_it = client::hc_connection(feedback, rendezvous_server, token).await;
+                let _keep_it = client::hc_connection(feedback, rendezvous_server, token, key).await;
                 let mut last_recv_time = Instant::now();
                 let mut webrtc_suspect_since: Option<Instant> = None;
                 let mut last_rx_progress = peer.rx_progress();

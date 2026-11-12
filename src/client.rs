@@ -466,14 +466,23 @@ impl Client {
             ));
         }
 
-        let other_server = interface.get_lch().read().unwrap().other_server.clone();
+        let (other_server, session_rendezvous_server) = {
+            let lch = interface.get_lch().read().unwrap();
+            (lch.other_server.clone(), lch.session_rendezvous_server())
+        };
         let (peer, other_server, key, token) = if let Some((a, b, c)) = other_server.as_ref() {
             (a.as_ref(), b.as_ref(), c.as_ref(), "")
         } else {
             (peer, "", key, token)
         };
         let (rendezvous_server, servers, contained) = if other_server.is_empty() {
-            crate::get_rendezvous_server(1_000).await
+            if let Some(server) = session_rendezvous_server {
+                // A session-selected server has no backup list and must not
+                // refresh the global rendezvous cache.
+                (server, Vec::new(), true)
+            } else {
+                crate::get_rendezvous_server(1_000).await
+            }
         } else {
             if other_server == PUBLIC_SERVER {
                 (
@@ -2933,6 +2942,88 @@ impl LoginConfigHandler {
         self.hash = hash;
     }
 
+    /// The profile snapshot that governs this session's outbound connection.
+    ///
+    /// An explicit `id@server` (parsed into `other_server` during
+    /// initialization) always wins, so the profile never overrides it.
+    fn active_server_profile(&self) -> Option<&ServerProfileContext> {
+        if self.other_server.is_some() {
+            return None;
+        }
+        self.server_profile.as_ref()
+    }
+
+    /// Rendezvous server selected by this session's profile, if any.
+    ///
+    /// An empty profile ID server keeps the legacy/global selection.
+    pub fn session_rendezvous_server(&self) -> Option<String> {
+        let server = self.active_server_profile()?.rendezvous_server.trim();
+        if server.is_empty() {
+            return None;
+        }
+        Some(check_port(server, RENDEZVOUS_PORT))
+    }
+
+    /// Key used for secure rendezvous traffic.
+    ///
+    /// An empty profile key keeps the legacy/global key, so a profile with no
+    /// server fields behaves like an empty global configuration.
+    pub fn session_key(&self, global_key: &str) -> String {
+        match self.active_server_profile() {
+            Some(profile) if !profile.key.trim().is_empty() => profile.key.trim().to_owned(),
+            _ => global_key.to_owned(),
+        }
+    }
+
+    /// API and custom ID server pair used for session audit URLs.
+    ///
+    /// A profile API server wins; otherwise the API is derived from the
+    /// profile's ID server. A profile with neither keeps the global pair.
+    pub fn session_audit_endpoints(
+        &self,
+        global_api: &str,
+        global_custom: &str,
+    ) -> (String, String) {
+        let Some(profile) = self.active_server_profile() else {
+            return (global_api.to_owned(), global_custom.to_owned());
+        };
+        if !profile.api_server.trim().is_empty() {
+            (
+                profile.api_server.trim().to_owned(),
+                profile.rendezvous_server.trim().to_owned(),
+            )
+        } else if !profile.rendezvous_server.trim().is_empty() {
+            (String::new(), profile.rendezvous_server.trim().to_owned())
+        } else {
+            (global_api.to_owned(), global_custom.to_owned())
+        }
+    }
+
+    /// Account token for this session.
+    ///
+    /// The token is issued by the global/default API server. Sending it to a
+    /// session backed by another API server would hand that server a
+    /// credential it never issued, so only sessions whose effective API server
+    /// matches the global one keep the token.
+    pub fn session_access_token(
+        &self,
+        global_token: &str,
+        global_api: &str,
+        global_custom: &str,
+    ) -> String {
+        if self.active_server_profile().is_none() {
+            return global_token.to_owned();
+        }
+        let (api, custom) = self.session_audit_endpoints(global_api, global_custom);
+        let session_api = crate::get_api_server(api, custom);
+        let default_api = crate::get_api_server(global_api.to_owned(), global_custom.to_owned());
+        if session_api == default_api {
+            global_token.to_owned()
+        } else {
+            String::new()
+        }
+    }
+
     /// Initialize the login config handler.
     ///
     /// # Arguments
@@ -5300,14 +5391,16 @@ pub async fn hc_connection(
     feedback: i32,
     rendezvous_server: String,
     token: &str,
+    key: &str,
 ) -> Option<tokio::sync::mpsc::UnboundedSender<()>> {
     if feedback == 0 || rendezvous_server.is_empty() || token.is_empty() {
         return None;
     }
     let (tx, rx) = unbounded_channel::<()>();
     let token = token.to_owned();
+    let key = key.to_owned();
     tokio::spawn(async move {
-        allow_err!(hc_connection_(rendezvous_server, rx, token).await);
+        allow_err!(hc_connection_(rendezvous_server, rx, token, key).await);
     });
     Some(tx)
 }
@@ -5316,6 +5409,7 @@ async fn hc_connection_(
     rendezvous_server: String,
     mut rx: UnboundedReceiver<()>,
     token: String,
+    key: String,
 ) -> ResultType<()> {
     let mut timer = crate::rustdesk_interval(interval(crate::TIMER_OUT));
     let mut last_recv_msg = Instant::now();
@@ -5323,7 +5417,8 @@ async fn hc_connection_(
 
     let host = check_port(&rendezvous_server, RENDEZVOUS_PORT);
     let mut conn = connect_tcp(host.clone(), CONNECT_TIMEOUT).await?;
-    let key = crate::get_key(true).await;
+    // Use the key and rendezvous server this session connected through, not
+    // whatever the global options hold by health-check time.
     crate::secure_tcp(&mut conn, &key).await?;
     let mut msg_out = RendezvousMessage::new();
     msg_out.set_hc(HealthCheck {
@@ -5831,6 +5926,132 @@ mod webrtc_race_tests {
 #[cfg(test)]
 #[path = "client/tests/trusted_devices_tests.rs"]
 mod trusted_devices_tests;
+
+#[cfg(test)]
+mod server_profile_session_tests {
+    use super::*;
+
+    fn profile() -> ServerProfileContext {
+        ServerProfileContext {
+            profile_id: "profile-1".to_owned(),
+            name: "Profile".to_owned(),
+            rendezvous_server: " profile.example.test ".to_owned(),
+            relay_server: "relay.example.test".to_owned(),
+            api_server: "https://api.example.test".to_owned(),
+            key: " profile-key ".to_owned(),
+        }
+    }
+
+    fn handler_with_profile() -> LoginConfigHandler {
+        let mut lch = LoginConfigHandler::default();
+        lch.server_profile = Some(profile());
+        lch
+    }
+
+    #[test]
+    fn server_profile_supplies_session_outbound_context() {
+        let lch = handler_with_profile();
+        assert_eq!(
+            lch.session_rendezvous_server(),
+            Some(check_port("profile.example.test", RENDEZVOUS_PORT))
+        );
+        assert_eq!(lch.session_key("global-key"), "profile-key");
+        assert_eq!(
+            lch.session_audit_endpoints("global-api", "global-custom"),
+            (
+                "https://api.example.test".to_owned(),
+                "profile.example.test".to_owned()
+            )
+        );
+        // The profile API server matches the global one explicitly, so the
+        // account token was issued by the server this session talks to.
+        assert_eq!(
+            lch.session_access_token("token", "https://api.example.test", ""),
+            "token"
+        );
+        assert_eq!(
+            lch.session_access_token("token", "https://global.example.test", ""),
+            ""
+        );
+    }
+
+    #[test]
+    fn no_server_profile_preserves_global_behavior() {
+        let lch = LoginConfigHandler::default();
+        assert_eq!(lch.session_rendezvous_server(), None);
+        assert_eq!(lch.session_key("global-key"), "global-key");
+        assert_eq!(
+            lch.session_audit_endpoints("global-api", "global-custom"),
+            ("global-api".to_owned(), "global-custom".to_owned())
+        );
+        assert_eq!(
+            lch.session_access_token("token", "global-api", "global-custom"),
+            "token"
+        );
+    }
+
+    #[test]
+    fn server_profile_snapshot_ignores_later_global_changes() {
+        let lch = handler_with_profile();
+        for (api, custom) in [
+            ("https://one.example.test", ""),
+            ("https://two.example.test", "other.example.test"),
+            ("", ""),
+        ] {
+            assert_eq!(
+                lch.session_rendezvous_server(),
+                Some(check_port("profile.example.test", RENDEZVOUS_PORT))
+            );
+            assert_eq!(lch.session_key("global-key"), "profile-key");
+            assert_eq!(
+                lch.session_audit_endpoints(api, custom),
+                (
+                    "https://api.example.test".to_owned(),
+                    "profile.example.test".to_owned()
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_other_server_wins_over_server_profile() {
+        let mut lch = handler_with_profile();
+        lch.other_server = Some((
+            "123456789".to_owned(),
+            "explicit.example.test".to_owned(),
+            "explicit-key".to_owned(),
+        ));
+        assert_eq!(lch.session_rendezvous_server(), None);
+        assert_eq!(lch.session_key("global-key"), "global-key");
+        assert_eq!(
+            lch.session_audit_endpoints("global-api", "global-custom"),
+            ("global-api".to_owned(), "global-custom".to_owned())
+        );
+        assert_eq!(
+            lch.session_access_token("token", "global-api", "global-custom"),
+            "token"
+        );
+    }
+
+    #[test]
+    fn empty_server_profile_fields_keep_legacy_behavior() {
+        let mut lch = LoginConfigHandler::default();
+        lch.server_profile = Some(ServerProfileContext {
+            profile_id: "empty".to_owned(),
+            ..Default::default()
+        });
+        assert_eq!(lch.session_rendezvous_server(), None);
+        assert_eq!(lch.session_key("global-key"), "global-key");
+        assert_eq!(
+            lch.session_audit_endpoints("global-api", "global-custom"),
+            ("global-api".to_owned(), "global-custom".to_owned())
+        );
+        assert_eq!(
+            lch.session_access_token("token", "global-api", "global-custom"),
+            "token"
+        );
+    }
+}
 
 #[cfg(test)]
 mod kx_tests {

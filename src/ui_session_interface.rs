@@ -582,11 +582,11 @@ impl<T: InvokeUiSession> Session<T> {
         if LocalConfig::get_option("access_token").is_empty() {
             return "".to_owned();
         }
-        crate::get_audit_server(
-            Config::get_option("api-server"),
-            Config::get_option("custom-rendezvous-server"),
-            typ,
-        )
+        let (api, custom) = self.lc.read().unwrap().session_audit_endpoints(
+            &Config::get_option("api-server"),
+            &Config::get_option("custom-rendezvous-server"),
+        );
+        crate::get_audit_server(api, custom, typ)
     }
 
     pub fn send_note(&self, note: String) {
@@ -1979,6 +1979,19 @@ pub async fn io_loop<T: InvokeUiSession>(handler: Session<T>, round: u32) {
     *handler.sender.write().unwrap() = Some(sender.clone());
     let token = LocalConfig::get_option("access_token");
     let key = crate::get_key(false).await;
+    // Freeze this session's outbound context now: later profile or global
+    // edits must not change a running session or its reconnects.
+    let (key, token) = {
+        let lc = handler.lc.read().unwrap();
+        (
+            lc.session_key(&key),
+            lc.session_access_token(
+                &token,
+                &Config::get_option("api-server"),
+                &Config::get_option("custom-rendezvous-server"),
+            ),
+        )
+    };
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     if handler.is_port_forward() {
         handler.lc.write().unwrap().port_forward_mux = crate::port_forward::mux_enabled();
