@@ -3127,6 +3127,43 @@ Future<void> clearPeerServerProfileIds(Iterable<String> peerIds) async {
   }
 }
 
+/// Adopts legacy global server options into one profile of the store.
+///
+/// Desktop keeps the legacy options in sync with the effective default so
+/// mobile/import/deep-link writers do not silently diverge from the profile
+/// list. A non-default profile is never touched unless its ID is passed
+/// explicitly (used when promoting it to default).
+Future<void> updateServerProfileFromGlobalConfig(
+  ServerConfig config, {
+  String? profileId,
+}) async {
+  if (!isDesktop) {
+    return;
+  }
+  final store = await loadServerProfileStore();
+  final targetId = profileId ?? store.defaultProfileId;
+  ServerProfile? target;
+  for (final profile in store.profiles) {
+    if (profile.id == targetId) {
+      target = profile;
+      break;
+    }
+  }
+  if (target == null ||
+      (target.idServer == config.idServer &&
+          target.relayServer == config.relayServer &&
+          target.apiServer == config.apiServer &&
+          target.key == config.key)) {
+    return;
+  }
+  await saveServerProfileStore(store.updateProfile(target.copyWith(
+    idServer: config.idServer,
+    relayServer: config.relayServer,
+    apiServer: config.apiServer,
+    key: config.key,
+  )));
+}
+
 Widget dialogButton(String text,
     {required VoidCallback? onPressed,
     bool isOutline = false,
@@ -3703,7 +3740,7 @@ class _CountDownButtonState extends State<_CountDownButton> {
 }
 
 importConfig(List<TextEditingController>? controllers, List<RxString>? errMsgs,
-    String? text) {
+    String? text, {bool writeGlobal = true}) {
   text = text?.trim();
   if (text != null && text.isNotEmpty) {
     try {
@@ -3712,7 +3749,8 @@ importConfig(List<TextEditingController>? controllers, List<RxString>? errMsgs,
         sc.relayServer = '';
       }
       if (sc.idServer.isNotEmpty) {
-        Future<bool> success = setServerConfig(controllers, errMsgs, sc);
+        Future<bool> success =
+            setServerConfig(controllers, errMsgs, sc, writeGlobal: writeGlobal);
         success.then((value) {
           if (value) {
             showToast(translate('Import server configuration successfully'));
@@ -3735,8 +3773,10 @@ importConfig(List<TextEditingController>? controllers, List<RxString>? errMsgs,
 Future<bool> setServerConfig(
   List<TextEditingController>? controllers,
   List<RxString>? errMsgs,
-  ServerConfig config,
-) async {
+  ServerConfig config, {
+  bool writeGlobal = true,
+  String? profileId,
+}) async {
   String removeEndSlash(String input) {
     if (input.endsWith('/')) {
       return input.substring(0, input.length - 1);
@@ -3779,6 +3819,9 @@ Future<bool> setServerConfig(
       return false;
     }
   }
+  if (!writeGlobal) {
+    return true;
+  }
   final oldApiServer = await bind.mainGetApiServer();
 
   // should set one by one
@@ -3792,6 +3835,11 @@ Future<bool> setServerConfig(
       oldApiServer != newApiServer &&
       gFFI.userModel.isLogin) {
     gFFI.userModel.logOut(apiServer: oldApiServer);
+  }
+  try {
+    await updateServerProfileFromGlobalConfig(config, profileId: profileId);
+  } catch (e) {
+    debugPrint('Failed to update server profile from global config: $e');
   }
   return true;
 }

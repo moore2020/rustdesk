@@ -180,11 +180,14 @@ customImageQualitySetting() {
 
 List<Widget> ServerConfigImportExportWidgets(
   List<TextEditingController> controllers,
-  List<RxString> errMsgs,
-) {
+  List<RxString> errMsgs, {
+  bool writeGlobal = true,
+  VoidCallback? onImported,
+}) {
   import() {
     Clipboard.getData(Clipboard.kTextPlain).then((value) {
-      importConfig(controllers, errMsgs, value?.text);
+      importConfig(controllers, errMsgs, value?.text, writeGlobal: writeGlobal);
+      onImported?.call();
     });
   }
 

@@ -1929,7 +1929,7 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
                 listTile(
                   icon: Icons.dns_outlined,
                   title: 'ID/Relay Server',
-                  onTap: () => showServerSettings(gFFI.dialogManager, setState),
+                  onTap: () => showServerProfiles(gFFI.dialogManager, setState),
                 ),
               if (!hideProxy && !hideServer) divider,
               if (!hideProxy)
