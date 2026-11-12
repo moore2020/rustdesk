@@ -126,6 +126,8 @@ void main() {
       validate: (name, config, errMsgs) async => true,
       onSaved: (_) {},
     ));
+    // Flush the dialog's zero-duration focus timer.
+    await tester.pump(Duration.zero);
 
     final fields =
         tester.widgetList<TextField>(find.byType(TextField)).toList();
