@@ -805,6 +805,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           forceRelay: call.arguments['forceRelay'],
           connToken: call.arguments['connToken'],
           loginMethod: call.arguments['loginMethod'] ?? '',
+          serverProfile: serverProfileFromWindowParam(
+              call.arguments['serverProfile']),
         );
       } else if (call.method == kWindowBumpMouse) {
         return RdPlatformChannel.instance.bumpMouse(

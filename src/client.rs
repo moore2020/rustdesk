@@ -2828,6 +2828,37 @@ struct ConnToken {
     session_id: u64,
 }
 
+/// Immutable server profile snapshot captured for one desktop session.
+///
+/// The desktop UI resolves the profile before opening the connection window,
+/// so edits or deletions after that point cannot change a running session's
+/// target. Empty server fields mean "inherit the legacy global option".
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ServerProfileContext {
+    #[serde(rename = "id")]
+    pub profile_id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(rename = "idServer", default)]
+    pub rendezvous_server: String,
+    #[serde(rename = "relayServer", default)]
+    pub relay_server: String,
+    #[serde(rename = "apiServer", default)]
+    pub api_server: String,
+    #[serde(default)]
+    pub key: String,
+}
+
+impl ServerProfileContext {
+    /// Structural validation of a snapshot received from the UI.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.profile_id.trim().is_empty() {
+            return Err("missing profile id".to_owned());
+        }
+        Ok(())
+    }
+}
+
 /// Login config handler for [`Client`].
 #[derive(Default)]
 pub struct LoginConfigHandler {
@@ -2875,6 +2906,8 @@ pub struct LoginConfigHandler {
     switch_back_allowed: bool,
     pub save_ab_password_to_recent: bool, // true: connected with ab password
     pub other_server: Option<(String, String, String)>,
+    /// Desktop-only snapshot of the server profile selected for this session.
+    pub server_profile: Option<ServerProfileContext>,
     pub custom_fps: Arc<Mutex<Option<usize>>>,
     pub adapter_luid: Option<i64>,
     pub mark_unsupported: Vec<CodecFormat>,

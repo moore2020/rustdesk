@@ -1317,6 +1317,7 @@ pub fn session_add(
     is_shared_password: bool,
     conn_token: Option<String>,
     login_method: &str,
+    server_profile: Option<String>,
 ) -> ResultType<FlutterSession> {
     let conn_type = if is_file_transfer {
         ConnType::FILE_TRANSFER
@@ -1344,6 +1345,20 @@ pub fn session_add(
     }
 
     LocalConfig::set_remote_id(&id);
+
+    // A snapshot from the UI must be complete and well-formed; silently
+    // dropping it would connect to a different server than the window shows.
+    let server_profile = match server_profile.as_deref().map(str::trim) {
+        Some(raw) if !raw.is_empty() => {
+            let context: ServerProfileContext = serde_json::from_str(raw)
+                .map_err(|e| anyhow!("invalid server profile context: {e}"))?;
+            context
+                .validate()
+                .map_err(|e| anyhow!("invalid server profile context: {e}"))?;
+            Some(context)
+        }
+        _ => None,
+    };
 
     let mut preset_password = password.clone();
     let shared_password = if is_shared_password {
@@ -1379,6 +1394,8 @@ pub fn session_add(
         conn_token,
         login_method,
     );
+
+    session.lc.write().unwrap().server_profile = server_profile;
 
     let session = Arc::new(session.clone());
     sessions::insert_session(session_id.to_owned(), conn_type, session.clone());

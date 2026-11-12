@@ -30,6 +30,7 @@ class PortForwardPage extends StatefulWidget {
     required this.id,
     required this.password,
     this.loginMethod = '',
+    this.serverProfile,
     required this.tabController,
     required this.isRDP,
     required this.isSharedPassword,
@@ -39,6 +40,7 @@ class PortForwardPage extends StatefulWidget {
   final String id;
   final String? password;
   final String loginMethod;
+  final Map<String, dynamic>? serverProfile;
   final DesktopTabController tabController;
   final bool isRDP;
   final bool? forceRelay;
@@ -72,6 +74,7 @@ class _PortForwardPageState extends State<PortForwardPage>
         isPortForward: true,
         password: widget.password,
         loginMethod: widget.loginMethod,
+        serverProfile: widget.serverProfile,
         isSharedPassword: widget.isSharedPassword,
         forceRelay: widget.forceRelay,
         connToken: widget.connToken,

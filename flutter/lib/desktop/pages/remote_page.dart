@@ -42,6 +42,7 @@ class RemotePage extends StatefulWidget {
     this.tabWindowId,
     this.password,
     this.loginMethod = '',
+    this.serverProfile,
     this.display,
     this.displays,
     this.tabController,
@@ -59,6 +60,7 @@ class RemotePage extends StatefulWidget {
   final List<int>? displays;
   final String? password;
   final String loginMethod;
+  final Map<String, dynamic>? serverProfile;
   final ToolbarState toolbarState;
   final String? switchUuid;
   final bool? forceRelay;
@@ -183,6 +185,7 @@ class _RemotePageState extends State<RemotePage>
       widget.id,
       password: widget.password,
       loginMethod: widget.loginMethod,
+      serverProfile: widget.serverProfile,
       isSharedPassword: widget.isSharedPassword,
       switchUuid: widget.switchUuid,
       forceRelay: widget.forceRelay,

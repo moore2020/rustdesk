@@ -4,6 +4,7 @@ import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/generated_bridge.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_config.dart';
+import 'package:flutter_hbb/utils/multi_window_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _ServerBinding extends Fake implements RustdeskImpl {
@@ -189,6 +190,81 @@ void main() {
       expect(await resolveDesktopServerProfile('123/r'), isNull);
       expect(await resolveDesktopServerProfile('192.168.1.10'), isNull);
       expect(binding.peerWrites, isEmpty);
+    });
+  });
+
+  group('window parameters', () {
+    final serverProfile = ServerProfileSnapshot.fromProfile(
+        _twoProfileStore().profiles[1]);
+
+    test('every desktop session type serializes the same profile payload', () {
+      final expected = serverProfile.toJson();
+      for (final type in [
+        WindowType.RemoteDesktop,
+        WindowType.FileTransfer,
+        WindowType.ViewCamera,
+        WindowType.PortForward,
+        WindowType.Terminal,
+      ]) {
+        final params = buildNewSessionParams(
+          type,
+          'peer-a',
+          password: 'secret',
+          loginMethod: 'request-approval',
+          forceRelay: false,
+          switchUuid: 'switch-uuid',
+          isRDP: true,
+          isSharedPassword: true,
+          connToken: 'token',
+          serverProfile: expected,
+        );
+        expect(params['serverProfile'], expected, reason: type.name);
+        expect(params['id'], 'peer-a');
+        expect(params['password'], 'secret');
+        expect(params['loginMethod'], 'request-approval');
+        expect(params['forceRelay'], isFalse);
+        expect(params['switch_uuid'], 'switch-uuid');
+        expect(params['isRDP'], isTrue);
+        expect(params['isSharedPassword'], isTrue);
+        expect(params['connToken'], 'token');
+      }
+    });
+
+    test('omitting the snapshot keeps the legacy payload unchanged', () {
+      final params = buildNewSessionParams(
+        WindowType.RemoteDesktop,
+        'peer-a',
+        forceRelay: true,
+      );
+
+      expect(params.containsKey('serverProfile'), isFalse);
+      expect(params['forceRelay'], isTrue);
+      expect(params['id'], 'peer-a');
+    });
+
+    test('tab moves reuse the session and carry no second profile', () {
+      final params = buildTabMoveParams(
+        WindowType.RemoteDesktop,
+        'peer-a',
+        'session-id',
+        7,
+      );
+
+      expect(params, {
+        'type': WindowType.RemoteDesktop.index,
+        'id': 'peer-a',
+        'tab_window_id': 7,
+        'session_id': 'session-id',
+      });
+    });
+
+    test('a window profile param is parsed back into a complete snapshot', () {
+      final parsed = serverProfileFromWindowParam(serverProfile.toJson());
+
+      expect(parsed?.toJson(), serverProfile.toJson());
+      expect(serverProfileFromWindowParam(null), isNull);
+      expect(serverProfileFromWindowParam('server'), isNull);
+      expect(serverProfileFromWindowParam({'id': 'incomplete'}), isNull);
     });
   });
 }

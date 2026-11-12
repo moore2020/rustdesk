@@ -49,6 +49,67 @@ class MultiWindowCallResult {
   MultiWindowCallResult(this.windowId, this.result);
 }
 
+/// Builds the JSON payload for opening a new desktop connection window.
+///
+/// [serverProfile] is the complete, immutable profile snapshot resolved for
+/// the peer. It travels with the window so the session keeps its captured
+/// context even if the profile is edited or deleted afterwards.
+Map<String, dynamic> buildNewSessionParams(
+  WindowType type,
+  String remoteId, {
+  String? password,
+  String loginMethod = '',
+  bool? forceRelay,
+  String? switchUuid,
+  bool? isRDP,
+  bool? isSharedPassword,
+  String? connToken,
+  Map<String, dynamic>? serverProfile,
+}) {
+  final params = <String, dynamic>{
+    'type': type.index,
+    'id': remoteId,
+    'password': password,
+    'forceRelay': forceRelay,
+  };
+  if (switchUuid != null) {
+    params['switch_uuid'] = switchUuid;
+  }
+  if (isRDP != null) {
+    params['isRDP'] = isRDP;
+  }
+  if (isSharedPassword != null) {
+    params['isSharedPassword'] = isSharedPassword;
+  }
+  if (connToken != null) {
+    params['connToken'] = connToken;
+  }
+  if (loginMethod.isNotEmpty) {
+    params['loginMethod'] = loginMethod;
+  }
+  if (serverProfile != null) {
+    params['serverProfile'] = serverProfile;
+  }
+  return params;
+}
+
+/// Payload for moving an existing tab into its own window.
+///
+/// The new window attaches to the already-running Rust session, so it must
+/// not carry a server profile: that would imply a second context.
+Map<String, dynamic> buildTabMoveParams(
+  WindowType windowType,
+  String peerId,
+  String sessionId,
+  int windowId,
+) =>
+    {
+      'type': windowType.index,
+      'id': peerId,
+      'tab_window_id': windowId,
+      'session_id': sessionId,
+    };
+
 /// Window Manager
 /// mainly use it in `Main Window`
 /// use it in sub window is not recommended
@@ -68,12 +129,8 @@ class RustDeskMultiWindowManager {
 
   moveTabToNewWindow(int windowId, String peerId, String sessionId,
       WindowType windowType) async {
-    var params = {
-      'type': windowType.index,
-      'id': peerId,
-      'tab_window_id': windowId,
-      'session_id': sessionId,
-    };
+    final params =
+        buildTabMoveParams(windowType, peerId, sessionId, windowId);
     if (windowType == WindowType.RemoteDesktop) {
       await _newSession(
         false,
@@ -231,28 +288,20 @@ class RustDeskMultiWindowManager {
     bool? isRDP,
     bool? isSharedPassword,
     String? connToken,
+    Map<String, dynamic>? serverProfile,
   }) async {
-    var params = {
-      "type": type.index,
-      "id": remoteId,
-      "password": password,
-      "forceRelay": forceRelay
-    };
-    if (switchUuid != null) {
-      params['switch_uuid'] = switchUuid;
-    }
-    if (isRDP != null) {
-      params['isRDP'] = isRDP;
-    }
-    if (isSharedPassword != null) {
-      params['isSharedPassword'] = isSharedPassword;
-    }
-    if (connToken != null) {
-      params['connToken'] = connToken;
-    }
-    if (loginMethod.isNotEmpty) {
-      params['loginMethod'] = loginMethod;
-    }
+    final params = buildNewSessionParams(
+      type,
+      remoteId,
+      password: password,
+      loginMethod: loginMethod,
+      forceRelay: forceRelay,
+      switchUuid: switchUuid,
+      isRDP: isRDP,
+      isSharedPassword: isSharedPassword,
+      connToken: connToken,
+      serverProfile: serverProfile,
+    );
     final msg = jsonEncode(params);
 
     // separate window for file transfer is not supported
@@ -278,6 +327,7 @@ class RustDeskMultiWindowManager {
     bool? isSharedPassword,
     String? switchUuid,
     bool? forceRelay,
+    Map<String, dynamic>? serverProfile,
   }) async {
     return await newSession(
       WindowType.RemoteDesktop,
@@ -289,6 +339,7 @@ class RustDeskMultiWindowManager {
       forceRelay: forceRelay,
       switchUuid: switchUuid,
       isSharedPassword: isSharedPassword,
+      serverProfile: serverProfile,
     );
   }
 
@@ -299,6 +350,7 @@ class RustDeskMultiWindowManager {
     bool? isSharedPassword,
     bool? forceRelay,
     String? connToken,
+    Map<String, dynamic>? serverProfile,
   }) async {
     return await newSession(
       WindowType.FileTransfer,
@@ -310,6 +362,7 @@ class RustDeskMultiWindowManager {
       forceRelay: forceRelay,
       isSharedPassword: isSharedPassword,
       connToken: connToken,
+      serverProfile: serverProfile,
     );
   }
 
@@ -321,6 +374,7 @@ class RustDeskMultiWindowManager {
     String? switchUuid,
     bool? forceRelay,
     String? connToken,
+    Map<String, dynamic>? serverProfile,
   }) async {
     return await newSession(
       WindowType.ViewCamera,
@@ -333,6 +387,7 @@ class RustDeskMultiWindowManager {
       switchUuid: switchUuid,
       isSharedPassword: isSharedPassword,
       connToken: connToken,
+      serverProfile: serverProfile,
     );
   }
 
@@ -344,6 +399,7 @@ class RustDeskMultiWindowManager {
     bool? isSharedPassword,
     bool? forceRelay,
     String? connToken,
+    Map<String, dynamic>? serverProfile,
   }) async {
     return await newSession(
       WindowType.PortForward,
@@ -356,6 +412,7 @@ class RustDeskMultiWindowManager {
       isRDP: isRDP,
       isSharedPassword: isSharedPassword,
       connToken: connToken,
+      serverProfile: serverProfile,
     );
   }
 
@@ -366,6 +423,7 @@ class RustDeskMultiWindowManager {
     bool? isSharedPassword,
     bool? forceRelay,
     String? connToken,
+    Map<String, dynamic>? serverProfile,
   }) async {
     // Iterate through terminal windows in reverse order to prioritize
     // the most recently added or used windows, as they are more likely
@@ -380,17 +438,16 @@ class RustDeskMultiWindowManager {
     // Terminal windows should always create new windows, not reuse
     // This avoids the MissingPluginException when trying to invoke
     // new_terminal on an inactive window
-    var params = {
-      "type": WindowType.Terminal.index,
-      "id": remoteId,
-      "password": password,
-      "forceRelay": forceRelay,
-      "isSharedPassword": isSharedPassword,
-      "connToken": connToken,
-    };
-    if (loginMethod.isNotEmpty) {
-      params['loginMethod'] = loginMethod;
-    }
+    final params = buildNewSessionParams(
+      WindowType.Terminal,
+      remoteId,
+      password: password,
+      loginMethod: loginMethod,
+      forceRelay: forceRelay,
+      isSharedPassword: isSharedPassword,
+      connToken: connToken,
+      serverProfile: serverProfile,
+    );
     final msg = jsonEncode(params);
 
     // Always create a new window for terminal

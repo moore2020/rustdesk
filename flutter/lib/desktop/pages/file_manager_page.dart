@@ -57,6 +57,7 @@ class FileManagerPage extends StatefulWidget {
       required this.id,
       required this.password,
       this.loginMethod = '',
+      this.serverProfile,
       required this.isSharedPassword,
       this.tabController,
       this.connToken,
@@ -65,6 +66,7 @@ class FileManagerPage extends StatefulWidget {
   final String id;
   final String? password;
   final String loginMethod;
+  final Map<String, dynamic>? serverProfile;
   final bool? isSharedPassword;
   final bool? forceRelay;
   final String? connToken;
@@ -102,6 +104,7 @@ class _FileManagerPageState extends State<FileManagerPage>
         isFileTransfer: true,
         password: widget.password,
         loginMethod: widget.loginMethod,
+        serverProfile: widget.serverProfile,
         isSharedPassword: widget.isSharedPassword,
         connToken: widget.connToken,
         forceRelay: widget.forceRelay);

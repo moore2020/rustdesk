@@ -4125,6 +4125,7 @@ class FFI {
     int? display,
     List<int>? displays,
     String loginMethod = '',
+    Map<String, dynamic>? serverProfile,
   }) {
     closed = false;
     if (isMobile) mobileReset();
@@ -4171,6 +4172,8 @@ class FFI {
         isSharedPassword: isSharedPassword ?? false,
         connToken: connToken,
         loginMethod: loginMethod,
+        serverProfile:
+            serverProfile == null ? null : jsonEncode(serverProfile),
       );
     } else if (display != null) {
       if (displays == null) {

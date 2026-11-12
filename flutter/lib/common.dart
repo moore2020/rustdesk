@@ -2559,40 +2559,46 @@ connectMainDesktop(String id,
     bool? isSharedPassword,
     String loginMethod = '',
     ServerProfileSnapshot? serverProfile}) async {
+  final serverProfileParam = serverProfile?.toJson();
   if (isFileTransfer) {
     await rustDeskWinManager.newFileTransfer(id,
         loginMethod: loginMethod,
         password: password,
         isSharedPassword: isSharedPassword,
         connToken: connToken,
-        forceRelay: forceRelay);
+        forceRelay: forceRelay,
+        serverProfile: serverProfileParam);
   } else if (isViewCamera) {
     await rustDeskWinManager.newViewCamera(id,
         loginMethod: loginMethod,
         password: password,
         isSharedPassword: isSharedPassword,
         connToken: connToken,
-        forceRelay: forceRelay);
+        forceRelay: forceRelay,
+        serverProfile: serverProfileParam);
   } else if (isTcpTunneling || isRDP) {
     await rustDeskWinManager.newPortForward(id, isRDP,
         loginMethod: loginMethod,
         password: password,
         isSharedPassword: isSharedPassword,
         connToken: connToken,
-        forceRelay: forceRelay);
+        forceRelay: forceRelay,
+        serverProfile: serverProfileParam);
   } else if (isTerminal) {
     await rustDeskWinManager.newTerminal(id,
         loginMethod: loginMethod,
         password: password,
         isSharedPassword: isSharedPassword,
         connToken: connToken,
-        forceRelay: forceRelay);
+        forceRelay: forceRelay,
+        serverProfile: serverProfileParam);
   } else {
     await rustDeskWinManager.newRemoteDesktop(id,
         loginMethod: loginMethod,
         password: password,
         isSharedPassword: isSharedPassword,
-        forceRelay: forceRelay);
+        forceRelay: forceRelay,
+        serverProfile: serverProfileParam);
   }
 }
 
@@ -3133,6 +3139,23 @@ Future<void> clearPeerServerProfileId(String peerId) async {
 Future<void> clearPeerServerProfileIds(Iterable<String> peerIds) async {
   for (final peerId in peerIds) {
     await clearPeerServerProfileId(peerId);
+  }
+}
+
+/// Parses the `serverProfile` field of a desktop window payload.
+///
+/// Window arguments may arrive JSON-decoded or from an older window that
+/// never carried a profile. Anything that is not a complete snapshot is
+/// ignored so the session falls back to resolving the peer's profile.
+ServerProfileSnapshot? serverProfileFromWindowParam(dynamic raw) {
+  if (raw is! Map) {
+    return null;
+  }
+  try {
+    return ServerProfileSnapshot.fromJson(Map<String, dynamic>.from(raw));
+  } catch (e) {
+    debugPrint('Invalid server profile in window param: $e');
+    return null;
   }
 }
 

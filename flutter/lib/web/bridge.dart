@@ -150,7 +150,9 @@ class RustdeskImpl {
       required bool isSharedPassword,
       String? connToken,
       required String loginMethod,
+      String? serverProfile,
       dynamic hint}) {
+    // Web has no server profile routing; the optional argument stays unused.
     return js.context.callMethod('setByName', [
       'session_add_sync',
       jsonEncode({
