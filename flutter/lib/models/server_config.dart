@@ -136,11 +136,24 @@ class ServerProfileStore {
   }
 
   factory ServerProfileStore.decode(String encoded) {
+    return ServerProfileStore.tryDecode(encoded) ??
+        ServerProfileStore.fromLegacy({});
+  }
+
+  /// Decodes [encoded], returning null when it is empty, malformed, or
+  /// contains no valid profile.
+  ///
+  /// Unlike [decode], this never fabricates a legacy default, so callers can
+  /// tell "nothing persisted yet" apart from a real store.
+  static ServerProfileStore? tryDecode(String encoded) {
+    if (encoded.isEmpty) {
+      return null;
+    }
     dynamic json;
     try {
       json = jsonDecode(encoded);
     } on FormatException {
-      return ServerProfileStore.fromLegacy({});
+      return null;
     }
     final profiles = <ServerProfile>[];
     final ids = <String>{};
@@ -162,7 +175,7 @@ class ServerProfileStore {
       }
     }
     if (profiles.isEmpty) {
-      return ServerProfileStore.fromLegacy({});
+      return null;
     }
     final defaultId = json['defaultProfileId'];
     return ServerProfileStore(
@@ -184,6 +197,24 @@ class ServerProfileStore {
         (profile) => profile.id == profileId,
         orElse: () => defaultProfile,
       );
+
+  /// Snapshot of [profileId] as currently stored, or null when that profile no
+  /// longer exists.
+  ///
+  /// Unlike [profileForPeer], this never falls back to the default, so a page
+  /// holding a selection that was deleted in Settings re-resolves instead of
+  /// silently connecting with a profile it no longer shows.
+  ServerProfileSnapshot? snapshotForSelection(String? profileId) {
+    if (profileId == null) {
+      return null;
+    }
+    for (final profile in profiles) {
+      if (profile.id == profileId) {
+        return ServerProfileSnapshot.fromProfile(profile);
+      }
+    }
+    return null;
+  }
 
   ServerProfileStore addProfile(ServerProfile profile) => ServerProfileStore(
         profiles: [...profiles, profile],
@@ -321,4 +352,18 @@ ServerProfileSnapshot? resolveServerProfileForId(
     return null;
   }
   return ServerProfileSnapshot.fromProfile(store.profileForPeer(peerProfileId));
+}
+
+/// Whether [auditServer] is served by the globally configured API server.
+///
+/// The account access token belongs to that server only. A profile session may
+/// be audited by another API server, so callers must not send the token there.
+bool auditServerUsesGlobalApiServer({
+  required String auditServer,
+  required String globalApiServer,
+}) {
+  if (auditServer.isEmpty || globalApiServer.isEmpty) {
+    return false;
+  }
+  return auditServer.startsWith('$globalApiServer/api/audit/');
 }

@@ -20,6 +20,7 @@ import 'package:flutter_hbb/models/group_model.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
 import 'package:flutter_hbb/models/peer_tab_model.dart';
 import 'package:flutter_hbb/models/printer_model.dart';
+import 'package:flutter_hbb/models/server_config.dart';
 import 'package:flutter_hbb/models/server_model.dart';
 import 'package:flutter_hbb/models/shortcut_model.dart';
 import 'package:flutter_hbb/models/user_model.dart';
@@ -1302,6 +1303,15 @@ class FfiModel with ChangeNotifier {
       final url = bind.sessionGetAuditServerSync(
           sessionId: sessionId, typ: "conn/active");
       if (url.isEmpty) {
+        return;
+      }
+      // The account token in getHttpHeaders() belongs to the global API
+      // server. A profile session can be audited by a different API server;
+      // never send it a credential that server did not issue.
+      if (!auditServerUsesGlobalApiServer(
+          auditServer: url,
+          globalApiServer: await bind.mainGetApiServer())) {
+        debugPrint('Audit server belongs to another server profile');
         return;
       }
       final initialConnSessionId =

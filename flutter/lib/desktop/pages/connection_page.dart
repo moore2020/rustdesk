@@ -370,15 +370,18 @@ class _ConnectionPageState extends State<ConnectionPage>
   /// happen inside [connect] (explicit ID, store not loaded, or stale state).
   ServerProfileSnapshot? _selectedServerProfile() {
     if (!isDesktop) return null;
-    final store = _serverProfileStore;
     final id = _idController.id;
-    if (store == null ||
-        _selectedServerProfileId == null ||
-        _serverProfileSelectionId != id) {
+    final selectedId = _selectedServerProfileId;
+    if (selectedId == null || _serverProfileSelectionId != id) {
       return null;
     }
-    return ServerProfileSnapshot.fromProfile(
-        store.profileForPeer(_selectedServerProfileId));
+    // Re-read the persisted store so profile edits or deletions made in
+    // Settings while this page stays open apply to the next connection. A
+    // missing selection makes connect() resolve again from fresh data.
+    final encoded = bind.mainGetOptionSync(key: kServerProfileStoreOption);
+    final store =
+        ServerProfileStore.tryDecode(encoded) ?? _serverProfileStore;
+    return store?.snapshotForSelection(selectedId);
   }
 
   /// Callback for the connect button.

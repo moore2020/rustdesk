@@ -133,4 +133,77 @@ void main() {
       'key': ' literal+key/with=padding\n',
     });
   });
+
+  test('tryDecode reads only a complete persisted store', () {
+    final profile = const ServerProfile(id: 'current', name: 'Current');
+    final store = ServerProfileStore(
+      profiles: [
+        profile,
+        const ServerProfile(id: 'other', name: 'Other'),
+      ],
+      defaultProfileId: 'current',
+    );
+    for (final invalid in ['', 'not JSON', '[]', '{"version":2}', '{}']) {
+      expect(ServerProfileStore.tryDecode(invalid), isNull, reason: invalid);
+    }
+    final updated = store.updateProfile(profile.copyWith(idServer: 'new'));
+    for (final encoded in [store.encode(), updated.encode()]) {
+      final decoded = ServerProfileStore.tryDecode(encoded);
+      expect(decoded, isNotNull);
+      expect(decoded!.encode(), encoded);
+    }
+  });
+
+  test('selection snapshots follow edits and invalidate deleted profiles', () {
+    const first = ServerProfile(id: 'first', name: 'First', idServer: 'one');
+    const second = ServerProfile(id: 'second', name: 'Second', idServer: 'two');
+    final store = ServerProfileStore(
+      profiles: const [first, second],
+      defaultProfileId: 'first',
+    );
+
+    expect(store.snapshotForSelection(null), isNull);
+    expect(store.snapshotForSelection('missing'), isNull);
+    expect(store.snapshotForSelection('second')?.idServer, 'two');
+
+    final edited = store.updateProfile(second.copyWith(idServer: 'two-new'));
+    expect(edited.snapshotForSelection('second')?.idServer, 'two-new');
+
+    final deleted =
+        store.setDefaultProfile('second').deleteProfile('first').store;
+    expect(deleted.snapshotForSelection('first'), isNull);
+    expect(deleted.snapshotForSelection('second')?.id, 'second');
+  });
+
+  test('only the global API audit endpoint may receive the account token', () {
+    expect(
+      auditServerUsesGlobalApiServer(
+        auditServer: 'https://api.example.test/api/audit/conn/active',
+        globalApiServer: 'https://api.example.test',
+      ),
+      isTrue,
+    );
+    for (final auditServer in [
+      'https://other.example.test/api/audit/conn/active',
+      'https://api.example.test.evil.test/api/audit/conn/active',
+      'https://api.example.test/api/auditx/conn/active',
+      '',
+    ]) {
+      expect(
+        auditServerUsesGlobalApiServer(
+          auditServer: auditServer,
+          globalApiServer: 'https://api.example.test',
+        ),
+        isFalse,
+        reason: auditServer,
+      );
+    }
+    expect(
+      auditServerUsesGlobalApiServer(
+        auditServer: 'https://api.example.test/api/audit/conn/active',
+        globalApiServer: '',
+      ),
+      isFalse,
+    );
+  });
 }
