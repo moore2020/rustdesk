@@ -273,6 +273,26 @@ void main() {
     });
   });
 
+  group('desktop entry point matrix', () {
+    test('RDP and camera windows carry the resolved snapshot', () {
+      final snapshot = ServerProfileSnapshot.fromProfile(
+          _twoProfileStore().profiles[1]);
+      final payload = snapshot.toJson();
+      for (final params in [
+        buildNewSessionParams(WindowType.RemoteDesktop, 'peer-a',
+            serverProfile: payload),
+        buildNewSessionParams(WindowType.ViewCamera, 'peer-a',
+            serverProfile: payload),
+        buildNewSessionParams(WindowType.PortForward, 'peer-a',
+            isRDP: true, serverProfile: payload),
+        buildNewSessionParams(WindowType.PortForward, 'peer-a',
+            isRDP: false, serverProfile: payload),
+      ]) {
+        expect(params['serverProfile'], payload);
+      }
+    });
+  });
+
   group('window parameters', () {
     final serverProfile = ServerProfileSnapshot.fromProfile(
         _twoProfileStore().profiles[1]);
