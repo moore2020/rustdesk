@@ -247,3 +247,56 @@ class ServerProfileDeletion {
   })  : peerProfileIds = Map.unmodifiable(peerProfileIds),
         clearedPeerIds = List.unmodifiable(clearedPeerIds);
 }
+
+/// Whether [rawId] carries its own transport target and must bypass the
+/// configured server profiles.
+///
+/// Mirrors the forms handled by the legacy connection path: `id@server`,
+/// forced-relay `id/r`, IP addresses, and `domain:port` direct connections.
+/// A pure peer ID (including an empty input) resolves through the store.
+bool isExplicitServerId(String rawId) {
+  final id = rawId.replaceAll(RegExp(r'\s+'), '');
+  if (id.isEmpty) {
+    return false;
+  }
+  if (id.contains('@') || id.contains(':')) {
+    return true;
+  }
+  if (id.endsWith(r'\r') || id.endsWith('/r')) {
+    return true;
+  }
+  return _isIpv4Address(id);
+}
+
+bool _isIpv4Address(String id) {
+  final parts = id.split('.');
+  if (parts.length != 4) {
+    return false;
+  }
+  for (final part in parts) {
+    if (part.isEmpty || part.length > 3) {
+      return false;
+    }
+    final value = int.tryParse(part);
+    if (value == null || value < 0 || value > 255) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Resolves the server profile snapshot for a connection to [rawId].
+///
+/// A valid [peerProfileId] wins; a missing or deleted one falls back to the
+/// store default. Explicit server forms return null so the legacy path keeps
+/// full control. This never writes the peer preference.
+ServerProfileSnapshot? resolveServerProfileForId(
+  ServerProfileStore store,
+  String rawId,
+  String? peerProfileId,
+) {
+  if (isExplicitServerId(rawId)) {
+    return null;
+  }
+  return ServerProfileSnapshot.fromProfile(store.profileForPeer(peerProfileId));
+}

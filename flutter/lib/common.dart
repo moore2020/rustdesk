@@ -2557,7 +2557,8 @@ connectMainDesktop(String id,
     String? password,
     String? connToken,
     bool? isSharedPassword,
-    String loginMethod = ''}) async {
+    String loginMethod = '',
+    ServerProfileSnapshot? serverProfile}) async {
   if (isFileTransfer) {
     await rustDeskWinManager.newFileTransfer(id,
         loginMethod: loginMethod,
@@ -2610,8 +2611,13 @@ connect(BuildContext context, String id,
     String? password,
     String? connToken,
     bool? isSharedPassword,
-    String loginMethod = ''}) async {
+    String loginMethod = '',
+    ServerProfileSnapshot? serverProfile}) async {
   if (id == '') return;
+  // Resolve against the raw ID so `id@server` and other explicit forms keep
+  // their legacy meaning instead of resolving a configured profile.
+  final resolvedServerProfile =
+      serverProfile ?? await resolveDesktopServerProfile(id);
   if (!isDesktop || desktopType == DesktopType.main) {
     try {
       if (Get.isRegistered<IDTextEditingController>()) {
@@ -2644,6 +2650,7 @@ connect(BuildContext context, String id,
         password: password,
         isSharedPassword: isSharedPassword,
         forceRelay: forceRelay,
+        serverProfile: resolvedServerProfile,
       );
     } else {
       await rustDeskWinManager.call(WindowType.Main, kWindowConnect, {
@@ -2658,6 +2665,8 @@ connect(BuildContext context, String id,
         'forceRelay': forceRelay,
         'connToken': connToken,
         'loginMethod': loginMethod,
+        if (resolvedServerProfile != null)
+          'serverProfile': resolvedServerProfile.toJson(),
       });
     }
   } else {
@@ -3124,6 +3133,33 @@ Future<void> clearPeerServerProfileId(String peerId) async {
 Future<void> clearPeerServerProfileIds(Iterable<String> peerIds) async {
   for (final peerId in peerIds) {
     await clearPeerServerProfileId(peerId);
+  }
+}
+
+/// Resolves the desktop server profile for a new connection to [rawId].
+///
+/// Resolution inspects the raw ID before `mainHandleRelayId` normalization so
+/// explicit server forms keep their legacy meaning. Reading the preference
+/// here never persists a selection.
+Future<ServerProfileSnapshot?> resolveDesktopServerProfile(
+    String rawId) async {
+  if (!isDesktop) {
+    return null;
+  }
+  final id = rawId.replaceAll(RegExp(r'\s+'), '');
+  if (isExplicitServerId(id)) {
+    return null;
+  }
+  try {
+    final store = await loadServerProfileStore();
+    return resolveServerProfileForId(
+      store,
+      id,
+      readPeerServerProfileId(id),
+    );
+  } catch (e) {
+    debugPrint('Failed to resolve server profile: $e');
+    return null;
   }
 }
 

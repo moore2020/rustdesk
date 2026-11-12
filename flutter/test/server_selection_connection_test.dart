@@ -1,0 +1,194 @@
+import 'dart:convert';
+
+import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/generated_bridge.dart';
+import 'package:flutter_hbb/models/platform_model.dart';
+import 'package:flutter_hbb/models/server_config.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+class _ServerBinding extends Fake implements RustdeskImpl {
+  final Map<String, String> options = {};
+  final Map<String, Map<String, String>> peerOptions = {};
+  final List<String> peerWrites = [];
+
+  @override
+  String mainGetOptionSync({required String key, dynamic hint}) =>
+      options[key] ?? '';
+
+  @override
+  Future<String> mainGetOptions({dynamic hint}) async => jsonEncode(options);
+
+  @override
+  Future<void> mainSetOption(
+      {required String key, required String value, dynamic hint}) async {
+    options[key] = value;
+  }
+
+  @override
+  String mainGetPeerOptionSync(
+          {required String id, required String key, dynamic hint}) =>
+      peerOptions[id]?[key] ?? '';
+
+  @override
+  Future<void> mainSetPeerOption(
+      {required String id,
+      required String key,
+      required String value,
+      dynamic hint}) async {
+    peerWrites.add('$id/$key=$value');
+    (peerOptions[id] ??= {})[key] = value;
+  }
+}
+
+ServerProfileStore _twoProfileStore() {
+  const defaultProfile = ServerProfile(
+    id: 'default-id',
+    name: 'Default',
+    idServer: 'default.example.test',
+    relayServer: 'default-relay.example.test',
+    apiServer: 'https://default-api.example.test',
+    key: 'default-key',
+  );
+  const peerProfile = ServerProfile(
+    id: 'peer-profile-id',
+    name: 'Peer profile',
+    idServer: 'peer.example.test',
+    relayServer: '',
+    apiServer: '',
+    key: ' peer-key ',
+  );
+  return ServerProfileStore(
+    profiles: [defaultProfile, peerProfile],
+    defaultProfileId: 'default-id',
+  );
+}
+
+void main() {
+  group('isExplicitServerId', () {
+    test('treats plain peer IDs as profile-eligible', () {
+      for (final id in ['123456789', 'peer-id', '']) {
+        expect(isExplicitServerId(id), isFalse, reason: id);
+      }
+    });
+
+    test('bypasses explicit server, relay, IP and domain port forms', () {
+      for (final id in [
+        '123@server.example.test',
+        '123@server.example.test?key=abc',
+        '123/r',
+        r'123\r',
+        '192.168.1.10',
+        'example.com:21116',
+        '::1',
+        ' 123 @server.example.test ',
+      ]) {
+        expect(isExplicitServerId(id), isTrue, reason: id);
+      }
+    });
+  });
+
+  group('resolveServerProfileForId', () {
+    test('pure ID without preference resolves the default profile', () {
+      final store = _twoProfileStore();
+      final snapshot = resolveServerProfileForId(store, 'peer-a', null);
+
+      expect(snapshot?.toJson(), store.defaultProfile.toJson());
+      expect(snapshot?.id, 'default-id');
+      expect(snapshot?.name, 'Default');
+      expect(snapshot?.idServer, 'default.example.test');
+      expect(snapshot?.relayServer, 'default-relay.example.test');
+      expect(snapshot?.apiServer, 'https://default-api.example.test');
+      expect(snapshot?.key, 'default-key');
+    });
+
+    test('pure ID with a valid preference resolves that profile', () {
+      final store = _twoProfileStore();
+      final snapshot =
+          resolveServerProfileForId(store, 'peer-a', 'peer-profile-id');
+
+      expect(snapshot?.id, 'peer-profile-id');
+      expect(snapshot?.name, 'Peer profile');
+      expect(snapshot?.idServer, 'peer.example.test');
+      expect(snapshot?.relayServer, '');
+      expect(snapshot?.apiServer, '');
+      expect(snapshot?.key, ' peer-key ');
+    });
+
+    test('missing or deleted preference falls back to the default', () {
+      final store = _twoProfileStore();
+      for (final staleId in ['deleted-id', 'other', null]) {
+        final snapshot = resolveServerProfileForId(store, 'peer-a', staleId);
+        expect(snapshot?.id, store.defaultProfileId);
+      }
+      expect(store.encode(), _twoProfileStore().encode());
+    });
+
+    test('explicit forms bypass profile selection', () {
+      final store = _twoProfileStore();
+      for (final id in [
+        '123@server.example.test',
+        '123/r',
+        r'123\r',
+        '192.168.1.10',
+        'example.com:21116',
+      ]) {
+        expect(
+          resolveServerProfileForId(store, id, 'peer-profile-id'),
+          isNull,
+          reason: id,
+        );
+      }
+    });
+
+    test('selection only changes the returned snapshot, not the store', () {
+      final store = _twoProfileStore();
+      final before = store.encode();
+      final first = resolveServerProfileForId(store, 'peer-a', null);
+      final second =
+          resolveServerProfileForId(store, 'peer-a', 'peer-profile-id');
+
+      expect(first?.id, isNot(second?.id));
+      expect(store.encode(), before);
+    });
+  });
+
+  group('resolveDesktopServerProfile', () {
+    late _ServerBinding binding;
+
+    setUp(() {
+      binding = _ServerBinding();
+      platformFFI.setBindingForTesting(binding);
+      binding.options[kServerProfileStoreOption] = _twoProfileStore().encode();
+    });
+
+    test('reads the peer preference without writing it back', () async {
+      binding.peerOptions['peer-a'] = {
+        kServerProfilePeerOption: 'peer-profile-id'
+      };
+
+      final snapshot = await resolveDesktopServerProfile('peer-a');
+
+      expect(snapshot?.id, 'peer-profile-id');
+      expect(binding.peerWrites, isEmpty);
+    });
+
+    test('uses the default profile when the preference is missing', () async {
+      final snapshot = await resolveDesktopServerProfile('peer-a');
+
+      expect(snapshot?.id, 'default-id');
+      expect(binding.peerWrites, isEmpty);
+    });
+
+    test('does not read or write preferences for explicit forms', () async {
+      binding.peerOptions['123@server.example.test'] = {
+        kServerProfilePeerOption: 'peer-profile-id'
+      };
+
+      expect(await resolveDesktopServerProfile('123@server.example.test'),
+          isNull);
+      expect(await resolveDesktopServerProfile('123/r'), isNull);
+      expect(await resolveDesktopServerProfile('192.168.1.10'), isNull);
+      expect(binding.peerWrites, isEmpty);
+    });
+  });
+}

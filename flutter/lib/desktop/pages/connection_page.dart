@@ -19,6 +19,7 @@ import '../../common/formatter/id_formatter.dart';
 import '../../common/widgets/peer_tab_page.dart';
 import '../../common/widgets/autocomplete.dart';
 import '../../models/platform_model.dart';
+import '../../models/server_config.dart';
 import '../../desktop/widgets/material_mod_popup_menu.dart' as mod_menu;
 
 class OnlineStatusWidget extends StatefulWidget {
@@ -216,11 +217,18 @@ class _ConnectionPageState extends State<ConnectionPage>
 
   final _menuOpen = false.obs;
 
+  ServerProfileStore? _serverProfileStore;
+  String? _selectedServerProfileId;
+  String? _serverProfileSelectionId;
+  int _serverProfileLoadGeneration = 0;
+
   @override
   void initState() {
     super.initState();
     _allPeersLoader.init(setState);
     _idFocusNode.addListener(onFocusChanged);
+    _idController.addListener(_refreshServerProfile);
+    _refreshServerProfile();
     if (_idController.text.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         final lastRemoteId = await bind.mainGetLastRemoteId();
@@ -238,6 +246,7 @@ class _ConnectionPageState extends State<ConnectionPage>
 
   @override
   void dispose() {
+    _idController.removeListener(_refreshServerProfile);
     _idController.dispose();
     windowManager.removeListener(this);
     _allPeersLoader.clear();
@@ -325,6 +334,53 @@ class _ConnectionPageState extends State<ConnectionPage>
     );
   }
 
+  /// Refreshes the profile selection for the current raw remote ID.
+  ///
+  /// The selection follows the peer preference or the store default. It is
+  /// local state only: nothing is persisted until a connection authenticates.
+  Future<void> _refreshServerProfile() async {
+    if (!isDesktop) return;
+    final rawId = _idController.id;
+    final generation = ++_serverProfileLoadGeneration;
+    if (isExplicitServerId(rawId)) {
+      if (mounted) {
+        setState(() {
+          _selectedServerProfileId = null;
+          _serverProfileSelectionId = rawId;
+        });
+      }
+      return;
+    }
+    try {
+      final store = _serverProfileStore ?? await loadServerProfileStore();
+      if (!mounted || generation != _serverProfileLoadGeneration) return;
+      final profile = resolveServerProfileForId(
+          store, rawId, readPeerServerProfileId(rawId));
+      setState(() {
+        _serverProfileStore = store;
+        _selectedServerProfileId = profile?.id;
+        _serverProfileSelectionId = rawId;
+      });
+    } catch (e) {
+      debugPrint('Failed to load server profiles: $e');
+    }
+  }
+
+  /// The profile selected in the dropdown, or null when resolution should
+  /// happen inside [connect] (explicit ID, store not loaded, or stale state).
+  ServerProfileSnapshot? _selectedServerProfile() {
+    if (!isDesktop) return null;
+    final store = _serverProfileStore;
+    final id = _idController.id;
+    if (store == null ||
+        _selectedServerProfileId == null ||
+        _serverProfileSelectionId != id) {
+      return null;
+    }
+    return ServerProfileSnapshot.fromProfile(
+        store.profileForPeer(_selectedServerProfileId));
+  }
+
   /// Callback for the connect button.
   /// Connects to the selected peer.
   void onConnect(
@@ -337,7 +393,8 @@ class _ConnectionPageState extends State<ConnectionPage>
         isFileTransfer: isFileTransfer,
         isViewCamera: isViewCamera,
         isTerminal: isTerminal,
-        isTcpTunneling: isTcpTunneling);
+        isTcpTunneling: isTcpTunneling,
+        serverProfile: _selectedServerProfile());
   }
 
   MenuEntrySubMenu<String> _requestApprovalMenu(BuildContext context) {
@@ -353,7 +410,8 @@ class _ConnectionPageState extends State<ConnectionPage>
               isFileTransfer: isFileTransfer,
               isViewCamera: isViewCamera,
               isTerminal: isTerminal,
-              isTcpTunneling: isTcpTunneling),
+              isTcpTunneling: isTcpTunneling,
+              serverProfile: _selectedServerProfile()),
           padding: EdgeInsets.symmetric(horizontal: kDesktopMenuPadding.left),
           dismissOnClicked: true,
         );
@@ -370,6 +428,51 @@ class _ConnectionPageState extends State<ConnectionPage>
         action('${translate('Terminal')} (beta)', isTerminal: true),
         if (isDesktop) action('TCP tunneling', isTcpTunneling: true),
       ],
+    );
+  }
+
+  /// Server profile selector shown under the remote ID field.
+  Widget _buildServerProfileSelector() {
+    final store = _serverProfileStore;
+    final selectedId = _selectedServerProfileId;
+    if (!isDesktop || store == null || selectedId == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Text('${translate('Server')}: ',
+              style: const TextStyle(fontSize: 14)),
+          Expanded(
+            child: DropdownButton<String>(
+              value: selectedId,
+              isExpanded: true,
+              isDense: true,
+              underline: const SizedBox.shrink(),
+              items: store.profiles
+                  .map((profile) => DropdownMenuItem<String>(
+                        value: profile.id,
+                        child: Text(
+                          profile.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ))
+                  .toList(),
+              onChanged: (profileId) {
+                if (profileId == null) return;
+                setState(() {
+                  _selectedServerProfileId = profileId;
+                  _serverProfileSelectionId = _idController.id;
+                  // A pending refresh for the same ID must not overwrite the
+                  // user's explicit choice.
+                  _serverProfileLoadGeneration++;
+                });
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -548,6 +651,7 @@ class _ConnectionPageState extends State<ConnectionPage>
                 )),
               ],
             ),
+            _buildServerProfileSelector(),
             Padding(
               padding: const EdgeInsets.only(top: 13.0),
               child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
