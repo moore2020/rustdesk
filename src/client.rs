@@ -467,7 +467,8 @@ impl Client {
         }
 
         let (other_server, session_rendezvous_server) = {
-            let lch = interface.get_lch().read().unwrap();
+            let lch_arc = interface.get_lch();
+            let lch = lch_arc.read().unwrap();
             (lch.other_server.clone(), lch.session_rendezvous_server())
         };
         let (peer, other_server, key, token) = if let Some((a, b, c)) = other_server.as_ref() {
