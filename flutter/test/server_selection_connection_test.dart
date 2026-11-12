@@ -193,6 +193,86 @@ void main() {
     });
   });
 
+  group('profile preference lifecycle', () {
+    late _ServerBinding binding;
+
+    setUp(() {
+      binding = _ServerBinding();
+      platformFFI.setBindingForTesting(binding);
+      binding.options[kServerProfileStoreOption] = _twoProfileStore().encode();
+    });
+
+    test('only an existing profile with a pure peer ID may be persisted', () {
+      final store = _twoProfileStore();
+      expect(
+        serverProfileIdForSuccess(
+            peerId: 'peer-a',
+            pendingProfileId: 'peer-profile-id',
+            store: store),
+        'peer-profile-id',
+      );
+      for (final id in [
+        '123@server.example.test',
+        '123/r',
+        r'123\r',
+        '192.168.1.10',
+        'example.com:21116',
+      ]) {
+        expect(
+          serverProfileIdForSuccess(
+              peerId: id,
+              pendingProfileId: 'peer-profile-id',
+              store: store),
+          isNull,
+          reason: id,
+        );
+      }
+      expect(
+        serverProfileIdForSuccess(
+            peerId: 'peer-a', pendingProfileId: null, store: store),
+        isNull,
+      );
+      expect(
+        serverProfileIdForSuccess(
+            peerId: 'peer-a', pendingProfileId: '', store: store),
+        isNull,
+      );
+      expect(
+        serverProfileIdForSuccess(
+            peerId: 'peer-a', pendingProfileId: 'deleted-id', store: store),
+        isNull,
+      );
+    });
+
+    test('saving writes only a valid pure-ID preference', () async {
+      expect(
+          await savePeerServerProfileId('peer-a', 'peer-profile-id'), isTrue);
+      expect(readPeerServerProfileId('peer-a'), 'peer-profile-id');
+
+      expect(await savePeerServerProfileId('peer-b', 'deleted-id'), isFalse);
+      expect(
+          await savePeerServerProfileId(
+              '123@server.example.test', 'peer-profile-id'),
+          isFalse);
+      expect(binding.peerWrites, [
+        'peer-a/$kServerProfilePeerOption=peer-profile-id',
+      ]);
+    });
+
+    test('the last authenticated success wins and repeats are stable',
+        () async {
+      await savePeerServerProfileId('peer-a', 'default-id');
+      await savePeerServerProfileId('peer-a', 'peer-profile-id');
+      expect(readPeerServerProfileId('peer-a'), 'peer-profile-id');
+
+      await savePeerServerProfileId('peer-a', 'peer-profile-id');
+      expect(readPeerServerProfileId('peer-a'), 'peer-profile-id');
+
+      await savePeerServerProfileId('peer-a', 'default-id');
+      expect(readPeerServerProfileId('peer-a'), 'default-id');
+    });
+  });
+
   group('window parameters', () {
     final serverProfile = ServerProfileSnapshot.fromProfile(
         _twoProfileStore().profiles[1]);

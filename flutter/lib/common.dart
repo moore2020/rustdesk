@@ -3117,13 +3117,18 @@ String? readPeerServerProfileId(String peerId) {
 
 Future<bool> savePeerServerProfileId(String peerId, String profileId) async {
   final store = await loadServerProfileStore();
-  if (!store.profiles.any((profile) => profile.id == profileId)) {
+  final id = serverProfileIdForSuccess(
+    peerId: peerId,
+    pendingProfileId: profileId,
+    store: store,
+  );
+  if (id == null) {
     return false;
   }
   await bind.mainSetPeerOption(
     id: peerId,
     key: kServerProfilePeerOption,
-    value: profileId,
+    value: id,
   );
   return true;
 }

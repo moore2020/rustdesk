@@ -285,6 +285,28 @@ bool _isIpv4Address(String id) {
   return true;
 }
 
+/// The profile ID that may be remembered for [peerId] after an authenticated
+/// success, or null when nothing should be written.
+///
+/// Only a pure peer ID has a meaningful profile preference, and a profile
+/// deleted while the session was connecting must not leave a dangling ID.
+String? serverProfileIdForSuccess({
+  required String peerId,
+  required String? pendingProfileId,
+  required ServerProfileStore store,
+}) {
+  if (pendingProfileId == null || pendingProfileId.isEmpty) {
+    return null;
+  }
+  if (isExplicitServerId(peerId)) {
+    return null;
+  }
+  if (!store.profiles.any((profile) => profile.id == pendingProfileId)) {
+    return null;
+  }
+  return pendingProfileId;
+}
+
 /// Resolves the server profile snapshot for a connection to [rawId].
 ///
 /// A valid [peerProfileId] wins; a missing or deleted one falls back to the

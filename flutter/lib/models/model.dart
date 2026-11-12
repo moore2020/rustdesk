@@ -126,6 +126,9 @@ class FfiModel with ChangeNotifier {
   bool _androidDocumentPickerInterruptedConnection = false;
   bool _viewOnly = false;
   bool _showMyCursor = false;
+  /// Profile this session was opened with, persisted only after the remote
+  /// peer's authenticated info arrives.
+  String? _pendingServerProfileId;
   WeakReference<FFI> parent;
   late final SessionID sessionId;
 
@@ -311,6 +314,32 @@ class FfiModel with ChangeNotifier {
     _permissions.clear();
   }
 
+  /// Remembers the server profile this session was opened with.
+  ///
+  /// Explicit server forms carry no profile preference, and a mobile session
+  /// never resolves one, so nothing is pending for them.
+  void setPendingServerProfile(String peerId, String? profileId) {
+    if (!isDesktop || profileId == null || profileId.isEmpty) return;
+    if (isExplicitServerId(peerId)) return;
+    _pendingServerProfileId = profileId;
+  }
+
+  /// Persists the pending profile once the remote peer has authenticated.
+  ///
+  /// Called from the `peer_info` event only: `connection_ready` is transport
+  /// level, while peer info exists only after login succeeded. The pending
+  /// value is consumed before the write so later events are no-ops.
+  Future<void> savePendingServerProfile(String peerId) async {
+    final profileId = _pendingServerProfileId;
+    if (profileId == null) return;
+    _pendingServerProfileId = null;
+    try {
+      await savePeerServerProfileId(peerId, profileId);
+    } catch (e) {
+      debugPrint('Failed to save server profile for $peerId: $e');
+    }
+  }
+
   handleCachedPeerData(CachedPeerData data, String peerId) async {
     handleMsgBox({
       'type': 'success',
@@ -339,6 +368,7 @@ class FfiModel with ChangeNotifier {
         handleMultipleWindowsSession(evt, sessionId, peerId);
       } else if (name == 'peer_info') {
         handlePeerInfo(evt, peerId, false);
+        await savePendingServerProfile(peerId);
       } else if (name == 'sync_peer_info') {
         handleSyncPeerInfo(evt, sessionId, peerId);
       } else if (name == 'sync_platform_additions') {
@@ -4157,6 +4187,10 @@ class FFI {
     // If tabWindowId != null, this session is a "tab -> window" one.
     // Else this session is a new one.
     if (isNewPeer) {
+      final pendingProfileId = serverProfile?['id'];
+      if (pendingProfileId is String) {
+        ffiModel.setPendingServerProfile(id, pendingProfileId);
+      }
       // ignore: unused_local_variable
       final addRes = bind.sessionAddSync(
         sessionId: sessionId,
