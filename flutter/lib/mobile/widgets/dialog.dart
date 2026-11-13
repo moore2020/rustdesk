@@ -268,20 +268,32 @@ typedef ServerProfileValidator = Future<bool> Function(
     String name, ServerConfig config, List<RxString> errMsgs);
 
 Future<ServerProfileDraft?> showServerProfileEditor(
-  BuildContext context, {
+  OverlayDialogManager dialogManager, {
   ServerProfile? profile,
   required ServerProfileValidator validate,
 }) {
-  return showDialog<ServerProfileDraft>(
-    context: context,
-    barrierDismissible: false,
-    builder: (dialogContext) => ServerProfileEditor(
-      profile: profile,
-      validate: validate,
-      onCancel: () => Navigator.of(dialogContext).pop(),
-      onSaved: (draft) => Navigator.of(dialogContext).pop(draft),
-    ),
-  );
+  final form = _ServerProfileEditorForm(profile: profile, validate: validate);
+  var closed = false;
+  return dialogManager.show<ServerProfileDraft>((setState, close, context) {
+    void cancel() {
+      if (closed) return;
+      closed = true;
+      close();
+    }
+
+    void save(ServerProfileDraft draft) {
+      if (closed) return;
+      closed = true;
+      close(draft);
+    }
+
+    return form.buildDialog(
+      setState: setState,
+      onSaved: save,
+      onCancel: cancel,
+      isActive: () => !closed,
+    );
+  }, backDismiss: false);
 }
 
 class ServerProfileEditor extends StatefulWidget {
@@ -303,81 +315,114 @@ class ServerProfileEditor extends StatefulWidget {
 }
 
 class _ServerProfileEditorState extends State<ServerProfileEditor> {
-  late final TextEditingController _nameCtrl;
-  late final TextEditingController _idCtrl;
-  late final TextEditingController _relayCtrl;
-  late final TextEditingController _apiCtrl;
-  late final TextEditingController _keyCtrl;
-  final _errMsgs = [''.obs, ''.obs, ''.obs];
-  var _nameError = '';
-  var _saving = false;
+  late final _ServerProfileEditorForm _form;
 
   @override
   void initState() {
     super.initState();
-    final config = widget.profile == null
-        ? ServerConfig()
-        : ServerConfig.fromProfile(widget.profile!);
-    _nameCtrl = TextEditingController(text: widget.profile?.name ?? '');
-    _idCtrl = TextEditingController(text: config.idServer);
-    _relayCtrl = TextEditingController(text: config.relayServer);
-    _apiCtrl = TextEditingController(text: config.apiServer);
-    _keyCtrl = TextEditingController(text: config.key);
+    _form = _ServerProfileEditorForm(
+      profile: widget.profile,
+      validate: widget.validate,
+    );
   }
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _idCtrl.dispose();
-    _relayCtrl.dispose();
-    _apiCtrl.dispose();
-    _keyCtrl.dispose();
+    _form.dispose();
     super.dispose();
-  }
-
-  Future<void> _submit() async {
-    if (_saving) return;
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) {
-      setState(() {
-        _nameError = translate('Failed');
-      });
-      return;
-    }
-    final config = ServerConfig(
-      idServer: _idCtrl.text,
-      relayServer: _relayCtrl.text,
-      apiServer: _apiCtrl.text,
-      key: _keyCtrl.text,
-    );
-    setState(() {
-      _nameError = '';
-      _saving = true;
-    });
-    final valid = await widget.validate(name, config, _errMsgs);
-    if (!mounted) return;
-    setState(() {
-      _saving = false;
-    });
-    if (!valid) {
-      showToast(translate('Failed'));
-      return;
-    }
-    widget.onSaved(ServerProfileDraft(name: name, config: config));
   }
 
   @override
   Widget build(BuildContext context) {
-    final controllers = [_idCtrl, _relayCtrl, _apiCtrl, _keyCtrl];
+    return _form.buildDialog(
+      setState: setState,
+      onSaved: widget.onSaved,
+      onCancel: widget.onCancel,
+      isActive: () => mounted,
+    );
+  }
+}
+
+class _ServerProfileEditorForm {
+  _ServerProfileEditorForm({
+    required this.profile,
+    required this.validate,
+  }) {
+    final config =
+        profile == null ? ServerConfig() : ServerConfig.fromProfile(profile!);
+    nameCtrl = TextEditingController(text: profile?.name ?? '');
+    idCtrl = TextEditingController(text: config.idServer);
+    relayCtrl = TextEditingController(text: config.relayServer);
+    apiCtrl = TextEditingController(text: config.apiServer);
+    keyCtrl = TextEditingController(text: config.key);
+  }
+
+  final ServerProfile? profile;
+  final ServerProfileValidator validate;
+  late final TextEditingController nameCtrl;
+  late final TextEditingController idCtrl;
+  late final TextEditingController relayCtrl;
+  late final TextEditingController apiCtrl;
+  late final TextEditingController keyCtrl;
+  final errMsgs = [''.obs, ''.obs, ''.obs];
+  var nameError = '';
+  var saving = false;
+
+  void dispose() {
+    nameCtrl.dispose();
+    idCtrl.dispose();
+    relayCtrl.dispose();
+    apiCtrl.dispose();
+    keyCtrl.dispose();
+  }
+
+  CustomAlertDialog buildDialog({
+    required void Function(VoidCallback) setState,
+    required ValueChanged<ServerProfileDraft> onSaved,
+    required VoidCallback onCancel,
+    required bool Function() isActive,
+  }) {
+    Future<void> submit() async {
+      if (saving) return;
+      final name = nameCtrl.text.trim();
+      if (name.isEmpty) {
+        setState(() {
+          nameError = translate('Failed');
+        });
+        return;
+      }
+      final config = ServerConfig(
+        idServer: idCtrl.text,
+        relayServer: relayCtrl.text,
+        apiServer: apiCtrl.text,
+        key: keyCtrl.text,
+      );
+      setState(() {
+        nameError = '';
+        saving = true;
+      });
+      final valid = await validate(name, config, errMsgs);
+      if (!isActive()) return;
+      setState(() {
+        saving = false;
+      });
+      if (!valid) {
+        showToast(translate('Failed'));
+        return;
+      }
+      onSaved(ServerProfileDraft(name: name, config: config));
+    }
+
+    final controllers = [idCtrl, relayCtrl, apiCtrl, keyCtrl];
     return CustomAlertDialog(
       title: Row(
         children: [
           Expanded(
-            child: Text(translate(widget.profile == null ? 'Add' : 'Edit')),
+            child: Text(translate(profile == null ? 'Add' : 'Edit')),
           ),
           ...ServerConfigImportExportWidgets(
             controllers,
-            _errMsgs,
+            errMsgs,
             writeGlobal: false,
             onImported: () => setState(() {}),
           ),
@@ -391,27 +436,27 @@ class _ServerProfileEditorState extends State<ServerProfileEditor> {
             children: [
               _serverSettingsField(
                 translate('Name'),
-                _nameCtrl,
-                _nameError,
+                nameCtrl,
+                nameError,
                 autofocus: true,
               ),
               const SizedBox(height: 8),
               _serverSettingsField(
                 translate('ID Server'),
-                _idCtrl,
-                _errMsgs[0].value,
+                idCtrl,
+                errMsgs[0].value,
               ),
               const SizedBox(height: 8),
               _serverSettingsField(
                 translate('Relay Server'),
-                _relayCtrl,
-                _errMsgs[1].value,
+                relayCtrl,
+                errMsgs[1].value,
               ),
               const SizedBox(height: 8),
               _serverSettingsField(
                 translate('API Server'),
-                _apiCtrl,
-                _errMsgs[2].value,
+                apiCtrl,
+                errMsgs[2].value,
                 validator: (value) {
                   if (value != null && value.isNotEmpty) {
                     if (!(value.startsWith('http://') ||
@@ -430,15 +475,15 @@ class _ServerProfileEditorState extends State<ServerProfileEditor> {
                       : 0,
                 ),
                 child: ApiServerWarning(
-                  controller: _apiCtrl,
-                  idController: _idCtrl,
+                  controller: apiCtrl,
+                  idController: idCtrl,
                   message: translate('api_server_connection_tip'),
                   emptyMessage: translate('api_server_empty_tip'),
                 ),
               ),
               const SizedBox(height: 8),
-              _serverSettingsField('Key', _keyCtrl, ''),
-              if (_saving)
+              _serverSettingsField('Key', keyCtrl, ''),
+              if (saving)
                 const Padding(
                   padding: EdgeInsets.only(top: 8),
                   child: LinearProgressIndicator(),
@@ -448,11 +493,11 @@ class _ServerProfileEditorState extends State<ServerProfileEditor> {
         ),
       ),
       actions: [
-        dialogButton('Cancel', onPressed: widget.onCancel, isOutline: true),
-        dialogButton('OK', onPressed: _saving ? null : _submit),
+        dialogButton('Cancel', onPressed: onCancel, isOutline: true),
+        dialogButton('OK', onPressed: saving ? null : submit),
       ],
-      onSubmit: _saving ? null : _submit,
-      onCancel: widget.onCancel,
+      onSubmit: saving ? null : submit,
+      onCancel: onCancel,
     );
   }
 }
@@ -470,9 +515,8 @@ Future<void> showServerProfiles(
     return;
   }
 
+  var closed = false;
   dialogManager.show((setState, close, context) {
-    var closed = false;
-
     void closeDialog() {
       closed = true;
       close();
@@ -488,7 +532,7 @@ Future<void> showServerProfiles(
 
     Future<void> addProfile() async {
       final draft = await showServerProfileEditor(
-        context,
+        dialogManager,
         validate: (name, config, errMsgs) =>
             setServerConfig(null, errMsgs, config, writeGlobal: false),
       );
@@ -507,7 +551,7 @@ Future<void> showServerProfiles(
 
     Future<void> editProfile(ServerProfile profile, bool isDefault) async {
       final draft = await showServerProfileEditor(
-        context,
+        dialogManager,
         profile: profile,
         validate: (name, config, errMsgs) => setServerConfig(
           null,

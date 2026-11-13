@@ -303,4 +303,39 @@ void main() {
     expect(binding.writtenOptionKeys, isEmpty);
     expect(binding.options['custom-rendezvous-server'], 'old.example.test');
   });
+
+  testWidgets('add profile dialog stacks above server profiles dialog',
+      (tester) async {
+    final dialogManager = OverlayDialogManager();
+    addTearDown(dialogManager.dismissAll);
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: globalKey,
+      home: const Scaffold(),
+    ));
+
+    await showServerProfiles(dialogManager, (_) {});
+    await tester.pumpAndSettle();
+
+    expect(find.text('ID/Relay Server'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pumpAndSettle();
+
+    final dialogs =
+        tester.widgetList<CustomAlertDialog>(find.byType(CustomAlertDialog)).toList();
+    expect(dialogs, hasLength(2));
+    expect(
+      find.descendant(of: find.byWidget(dialogs.last), matching: find.text('Add')),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(TextField).at(0), 'zeliu6');
+    await tester.enterText(find.byType(TextField).at(1), '47.103.111.218');
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CustomAlertDialog), findsOneWidget);
+    expect(find.text('zeliu6'), findsOneWidget);
+    expect(find.text('47.103.111.218'), findsOneWidget);
+  });
 }
