@@ -1,0 +1,91 @@
+<h2>指定 ID / 中继服务器</h2>
+<p class="subtitle">先确认“新建远程连接”时服务器选择放在哪里；两种草图都保留“设置 → 网络”作为服务器管理入口。</p>
+
+<style>
+  .server-layouts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:22px; }
+  .server-layout { border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--surface); cursor:pointer; transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease; }
+  .server-layout:hover { transform:translateY(-2px); border-color:var(--accent); box-shadow:0 8px 24px rgba(0,0,0,.12); }
+  .server-layout.selected { border:2px solid var(--accent); }
+  .layout-title { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border); }
+  .layout-letter { display:grid; place-items:center; width:26px; height:26px; border-radius:8px; background:var(--accent); color:white; font-weight:700; }
+  .layout-title h3 { margin:0; font-size:16px; }
+  .layout-title p { margin:3px 0 0; color:var(--muted); font-size:12px; }
+  .mock-app { padding:14px; background:linear-gradient(135deg,rgba(90,120,160,.08),transparent); }
+  .mock-window { border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--background); box-shadow:0 5px 18px rgba(0,0,0,.08); }
+  .mock-topbar { display:flex; align-items:center; gap:7px; padding:9px 11px; border-bottom:1px solid var(--border); font-size:11px; color:var(--muted); }
+  .dot { width:7px; height:7px; border-radius:50%; background:#e66; }
+  .dot:nth-child(2) { background:#e5b44f; }.dot:nth-child(3) { background:#55b878; }
+  .mock-body { display:grid; grid-template-columns:74px 1fr; min-height:252px; }
+  .mock-nav { padding:12px 8px; border-right:1px solid var(--border); font-size:10px; color:var(--muted); }
+  .nav-item { padding:7px 5px; margin-bottom:4px; border-radius:5px; }.nav-item.active { color:var(--accent); background:rgba(50,120,240,.12); font-weight:600; }
+  .mock-main { padding:15px; }.mock-main h4 { margin:0 0 10px; font-size:14px; }.mock-label { display:block; margin:9px 0 4px; font-size:10px; color:var(--muted); }
+  .mock-input,.mock-select { display:flex; justify-content:space-between; align-items:center; padding:8px 9px; border:1px solid var(--border); border-radius:5px; font-size:11px; background:var(--surface); }
+  .mock-select { color:var(--text); }.chevron { color:var(--muted); font-size:12px; }
+  .mock-button { display:inline-block; margin-top:13px; padding:8px 13px; border-radius:5px; background:var(--accent); color:white; font-size:11px; font-weight:600; }
+  .server-pill { display:inline-flex; align-items:center; gap:5px; margin-top:8px; padding:5px 7px; border-radius:99px; font-size:9px; background:rgba(65,170,105,.13); color:#31854f; }
+  .server-dot { width:6px; height:6px; border-radius:50%; background:#43a866; }
+  .settings-row { display:flex; align-items:center; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border); font-size:10px; }.settings-row:last-child{border-bottom:0}.settings-value{color:var(--muted)}
+  .note { margin:13px 14px 15px; padding:10px 11px; border-radius:8px; background:rgba(50,120,240,.08); color:var(--muted); font-size:11px; line-height:1.45; }
+  @media(max-width:760px){ .server-layouts{grid-template-columns:1fr;} .mock-body{min-height:220px;} }
+</style>
+
+<div class="server-layouts">
+  <div class="server-layout" data-choice="a" onclick="toggleSelect(this)">
+    <div class="layout-title">
+      <div class="layout-letter">A</div>
+      <div><h3>连接页下拉选择</h3><p>最直接；每次新建连接时明确指定</p></div>
+    </div>
+    <div class="mock-app">
+      <div class="mock-window">
+        <div class="mock-topbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:5px">RustDesk · 新建连接</span></div>
+        <div class="mock-body">
+          <div class="mock-nav"><div class="nav-item active">连接</div><div class="nav-item">收藏</div><div class="nav-item">历史</div></div>
+          <div class="mock-main">
+            <h4>连接到远程设备</h4>
+            <span class="mock-label">远程设备 ID</span>
+            <div class="mock-input">123 456 789</div>
+            <span class="mock-label">ID / 中继服务器</span>
+            <div class="mock-select">默认服务器 <span class="chevron">⌄</span></div>
+            <div class="server-pill"><span class="server-dot"></span> 当前使用：官方服务器</div>
+            <span class="mock-label">别名（可选）</span>
+            <div class="mock-input" style="color:var(--muted)">例如：办公室电脑</div>
+            <div class="mock-button">连接</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note">“设置 → 网络”负责新增、编辑、删除服务器；连接页只选择本次连接使用哪一个。未选择时沿用默认服务器。</div>
+  </div>
+
+  <div class="server-layout" data-choice="b" onclick="toggleSelect(this)">
+    <div class="layout-title">
+      <div class="layout-letter">B</div>
+      <div><h3>连接页侧边快捷区</h3><p>更醒目；适合频繁在服务器间切换</p></div>
+    </div>
+    <div class="mock-app">
+      <div class="mock-window">
+        <div class="mock-topbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:5px">RustDesk · 新建连接</span></div>
+        <div class="mock-body">
+          <div class="mock-nav"><div class="nav-item active">连接</div><div class="nav-item">收藏</div><div class="nav-item">历史</div></div>
+          <div class="mock-main" style="display:grid;grid-template-columns:1fr 108px;gap:12px">
+            <div><h4>连接到远程设备</h4><span class="mock-label">远程设备 ID</span><div class="mock-input">123 456 789</div><span class="mock-label">别名（可选）</span><div class="mock-input" style="color:var(--muted)">例如：办公室电脑</div><div class="mock-button">连接</div></div>
+            <div style="border-left:1px solid var(--border);padding-left:10px"><span class="mock-label" style="margin-top:0">本次连接</span><div style="font-size:10px;font-weight:600;margin:5px 0 9px">服务器</div><div class="mock-select" style="display:block;padding:7px;font-size:10px">官方服务器<div style="color:var(--muted);font-size:9px;margin-top:3px">默认</div></div><div class="mock-select" style="display:block;padding:7px;font-size:10px;margin-top:6px">团队服务器<div style="color:var(--muted);font-size:9px;margin-top:3px">team.example</div></div><div style="font-size:9px;color:var(--accent);margin-top:10px">＋ 管理服务器</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note">右侧显示常用服务器，点击后立即成为本次连接的服务器；服务器较多时可展开完整列表。</div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:20px">
+  <div class="mockup-header">设置 → 网络：服务器管理（两种连接页方案共用）</div>
+  <div class="mockup-body" style="padding:15px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px"><div><strong style="font-size:13px">ID / 中继服务器</strong><div style="font-size:10px;color:var(--muted);margin-top:3px">管理可用于新建连接的服务器配置</div></div><span class="mock-button" style="margin:0">＋ 添加服务器</span></div>
+    <div class="settings-row"><span>官方服务器 <small style="color:#43a866">● 默认</small></span><span class="settings-value">自动配置　⋯</span></div>
+    <div class="settings-row"><span>团队服务器</span><span class="settings-value">team.example.com　⋯</span></div>
+    <div class="settings-row"><span>朋友的服务器</span><span class="settings-value">relay.example.net　⋯</span></div>
+  </div>
+</div>
+
+<p style="margin-top:18px;color:var(--muted);font-size:12px">请点击更接近你想要的连接页布局；也可以直接告诉我你希望调整的位置或命名。</p>
