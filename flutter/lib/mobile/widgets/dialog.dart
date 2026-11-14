@@ -636,6 +636,72 @@ Future<void> showServerProfiles(
       refresh(deletion.store);
     }
 
+    Widget buildProfileTile(int index) {
+      final profile = store.profiles[index];
+      final isDefault = profile.id == store.defaultProfileId;
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                profile.name,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isDefault) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: MyTheme.accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  translate('Default'),
+                  style: TextStyle(fontSize: 12, color: MyTheme.accent),
+                ),
+              ),
+            ],
+          ],
+        ),
+        subtitle: Text(
+          profile.idServer.isEmpty ? '-' : profile.idServer,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isDefault)
+              Tooltip(
+                message: translate('Default'),
+                child: IconButton(
+                  onPressed: () => setDefault(profile),
+                  icon: const Icon(Icons.star_border),
+                ),
+              ),
+            Tooltip(
+              message: translate('Edit'),
+              child: IconButton(
+                onPressed: () => editProfile(profile, isDefault),
+                icon: const Icon(Icons.edit_outlined),
+              ),
+            ),
+            if (!isDefault && store.profiles.length > 1)
+              Tooltip(
+                message: translate('Delete'),
+                child: IconButton(
+                  onPressed: () => deleteProfile(profile),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ),
+          ],
+        ),
+        onTap: () => editProfile(profile, isDefault),
+      );
+    }
+
     return CustomAlertDialog(
       title: Row(
         children: [
@@ -651,75 +717,16 @@ Future<void> showServerProfiles(
       ),
       content: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 500, maxHeight: 400),
-        child: ListView.separated(
-          shrinkWrap: true,
-          itemCount: store.profiles.length,
-          separatorBuilder: (_, __) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final profile = store.profiles[index];
-            final isDefault = profile.id == store.defaultProfileId;
-            return ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      profile.name,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (isDefault) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: MyTheme.accent.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        translate('Default'),
-                        style: TextStyle(fontSize: 12, color: MyTheme.accent),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              subtitle: Text(
-                profile.idServer.isEmpty ? '-' : profile.idServer,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (!isDefault)
-                    Tooltip(
-                      message: translate('Default'),
-                      child: IconButton(
-                        onPressed: () => setDefault(profile),
-                        icon: const Icon(Icons.star_border),
-                      ),
-                    ),
-                  Tooltip(
-                    message: translate('Edit'),
-                    child: IconButton(
-                      onPressed: () => editProfile(profile, isDefault),
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
-                  ),
-                  if (!isDefault && store.profiles.length > 1)
-                    Tooltip(
-                      message: translate('Delete'),
-                      child: IconButton(
-                        onPressed: () => deleteProfile(profile),
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                    ),
-                ],
-              ),
-              onTap: () => editProfile(profile, isDefault),
-            );
-          },
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < store.profiles.length; index++) ...[
+                if (index > 0) const Divider(height: 1),
+                buildProfileTile(index),
+              ],
+            ],
+          ),
         ),
       ),
       actions: [

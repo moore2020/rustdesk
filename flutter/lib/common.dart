@@ -1059,7 +1059,7 @@ void showToast(String text,
 // - Remove argument "contentPadding", no need for it, all should look the same.
 // - Remove "required" for argument "content". See simple confirm dialog "delete peer", only title and actions are used. No need to "content: SizedBox.shrink()".
 // - Make dead code alive, transform arguments "onSubmit" and "onCancel" into correspondenting buttons "ConfirmOkButton", "CancelButton".
-class CustomAlertDialog extends StatelessWidget {
+class CustomAlertDialog extends StatefulWidget {
   const CustomAlertDialog(
       {Key? key,
       this.title,
@@ -1082,34 +1082,49 @@ class CustomAlertDialog extends StatelessWidget {
   final Function()? onCancel;
 
   @override
-  Widget build(BuildContext context) {
-    // request focus
-    FocusScopeNode scopeNode = FocusScopeNode();
-    Future.delayed(Duration.zero, () {
-      if (!scopeNode.hasFocus) scopeNode.requestFocus();
-    });
-    bool tabTapped = false;
-    if (isAndroid) gFFI.invokeMethod("enable_soft_keyboard", true);
+  State<CustomAlertDialog> createState() => _CustomAlertDialogState();
+}
 
+class _CustomAlertDialogState extends State<CustomAlertDialog> {
+  final FocusScopeNode _scopeNode = FocusScopeNode();
+  bool _tabTapped = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(Duration.zero, () {
+      if (mounted && !_scopeNode.hasFocus) _scopeNode.requestFocus();
+    });
+    if (isAndroid) gFFI.invokeMethod("enable_soft_keyboard", true);
+  }
+
+  @override
+  void dispose() {
+    _scopeNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return FocusScope(
-      node: scopeNode,
+      node: _scopeNode,
       autofocus: true,
       onKey: (node, key) {
         if (key.logicalKey == LogicalKeyboardKey.escape) {
           if (key is RawKeyDownEvent) {
-            onCancel?.call();
+            widget.onCancel?.call();
           }
           return KeyEventResult.handled; // avoid TextField exception on escape
-        } else if (!tabTapped &&
-            onSubmit != null &&
+        } else if (!_tabTapped &&
+            widget.onSubmit != null &&
             (key.logicalKey == LogicalKeyboardKey.enter ||
                 key.logicalKey == LogicalKeyboardKey.numpadEnter)) {
-          if (key is RawKeyDownEvent) onSubmit?.call();
+          if (key is RawKeyDownEvent) widget.onSubmit?.call();
           return KeyEventResult.handled;
         } else if (key.logicalKey == LogicalKeyboardKey.tab) {
           if (key is RawKeyDownEvent) {
-            scopeNode.nextFocus();
-            tabTapped = true;
+            _scopeNode.nextFocus();
+            _tabTapped = true;
           }
           return KeyEventResult.handled;
         }
@@ -1117,15 +1132,15 @@ class CustomAlertDialog extends StatelessWidget {
       },
       child: AlertDialog(
           scrollable: true,
-          title: title,
+          title: widget.title,
           content: ConstrainedBox(
-            constraints: contentBoxConstraints,
-            child: content,
+            constraints: widget.contentBoxConstraints,
+            child: widget.content,
           ),
-          actions: actions,
-          titlePadding: titlePadding ?? MyTheme.dialogTitlePadding(),
+          actions: widget.actions,
+          titlePadding: widget.titlePadding ?? MyTheme.dialogTitlePadding(),
           contentPadding:
-              MyTheme.dialogContentPadding(actions: actions is List),
+              MyTheme.dialogContentPadding(actions: widget.actions is List),
           actionsPadding: MyTheme.dialogActionsPadding(),
           buttonPadding: MyTheme.dialogButtonPadding),
     );
@@ -4419,6 +4434,9 @@ Widget workaroundWindowBorder(BuildContext context, Widget child) {
 
 void updateTextAndPreserveSelection(
     TextEditingController controller, String text) {
+  if (controller.text == text) {
+    return;
+  }
   // Only care about select all for now.
   final isSelected = controller.selection.isValid &&
       controller.selection.end > controller.selection.start;

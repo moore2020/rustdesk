@@ -338,4 +338,47 @@ void main() {
     expect(find.text('zeliu6'), findsOneWidget);
     expect(find.text('47.103.111.218'), findsOneWidget);
   });
+
+  testWidgets(
+      'profile editor dialog keeps collapsed cursor while typing on macOS',
+      (tester) async {
+    final dialogManager = OverlayDialogManager();
+    addTearDown(dialogManager.dismissAll);
+
+    await tester.pumpWidget(MaterialApp(
+      navigatorKey: globalKey,
+      home: const Scaffold(),
+    ));
+
+    showServerProfileEditor(
+      dialogManager,
+      validate: (name, config, errMsgs) async => true,
+    );
+    await tester.pumpAndSettle();
+
+    final nameField = find.byType(TextField).at(0);
+    await tester.tap(nameField);
+    await tester.pumpAndSettle();
+
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: 'f',
+      selection: TextSelection.collapsed(offset: 1),
+    ));
+    await tester.pump();
+    await tester.pump(Duration.zero);
+
+    final ctrl = tester.widget<TextField>(nameField).controller!;
+    expect(ctrl.text, 'f');
+    expect(ctrl.selection, const TextSelection.collapsed(offset: 1));
+
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: 'fo',
+      selection: TextSelection.collapsed(offset: 2),
+    ));
+    await tester.pump();
+    await tester.pump(Duration.zero);
+
+    expect(ctrl.text, 'fo');
+    expect(ctrl.selection, const TextSelection.collapsed(offset: 2));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 }
