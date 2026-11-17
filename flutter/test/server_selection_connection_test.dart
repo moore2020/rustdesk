@@ -1,6 +1,8 @@
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/common/formatter/id_formatter.dart';
 import 'package:flutter_hbb/generated_bridge.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/server_config.dart';
@@ -367,4 +369,56 @@ void main() {
       expect(serverProfileFromWindowParam({'id': 'incomplete'}), isNull);
     });
   });
+
+  testWidgets(
+      'updateTextAndPreserveSelection keeps collapsed cursor while typing on macOS',
+      (tester) async {
+    final idController = IDTextEditingController();
+    final fieldController = TextEditingController();
+    addTearDown(() {
+      idController.dispose();
+      fieldController.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              updateTextAndPreserveSelection(
+                  fieldController, idController.text);
+              return TextField(
+                controller: fieldController,
+                inputFormatters: [IDTextInputFormatter()],
+                onChanged: (v) => setState(() => idController.id = v),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: '1',
+      selection: TextSelection.collapsed(offset: 1),
+    ));
+    await tester.pump();
+    await tester.pump(Duration.zero);
+
+    expect(fieldController.text, '1');
+    expect(fieldController.selection, const TextSelection.collapsed(offset: 1));
+
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: '12',
+      selection: TextSelection.collapsed(offset: 2),
+    ));
+    await tester.pump();
+    await tester.pump(Duration.zero);
+
+    expect(fieldController.text, '12');
+    expect(fieldController.selection, const TextSelection.collapsed(offset: 2));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 }

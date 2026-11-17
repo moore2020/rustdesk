@@ -445,20 +445,25 @@ class _ConnectionPageState extends State<ConnectionPage>
       padding: const EdgeInsets.only(top: 8),
       child: Row(
         children: [
-          Text('${translate('Server')}: ',
+          Text('${translate('Server')}:',
               style: const TextStyle(fontSize: 14)),
-          Expanded(
+          const SizedBox(width: 12),
+          Flexible(
             child: DropdownButton<String>(
               value: selectedId,
-              isExpanded: true,
               isDense: true,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              borderRadius: BorderRadius.circular(6),
               underline: const SizedBox.shrink(),
               items: store.profiles
                   .map((profile) => DropdownMenuItem<String>(
                         value: profile.id,
-                        child: Text(
-                          profile.name,
-                          overflow: TextOverflow.ellipsis,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 180),
+                          child: Text(
+                            profile.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ))
                   .toList(),
